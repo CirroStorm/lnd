@@ -2,6 +2,7 @@ package lnwallet
 
 import (
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/input"
@@ -46,7 +47,7 @@ type Config struct {
 
 	// ChainIO is an instance of the BlockChainIO interface. ChainIO is
 	// used to lookup the existence of outputs within the UTXO set.
-	ChainIO BlockChainIO
+	ChainIO chain.Interface
 
 	// DefaultConstraints is the set of default constraints that will be
 	// used for any incoming or outgoing channel reservation requests.

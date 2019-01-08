@@ -191,6 +191,13 @@ func (*mockChainIO) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) 
 	return nil, nil
 }
 
+func (*mockChainIO) SupportsUnconfirmedTransactions() bool {
+	return true
+}
+
+func (*mockChainIO) WaitForBackendToStart() {
+}
+
 // mockWalletController is used by the LightningWallet, and let us mock the
 // interaction with the bitcoin network.
 type mockWalletController struct {
@@ -198,11 +205,6 @@ type mockWalletController struct {
 	prevAddres            btcutil.Address
 	publishedTransactions chan *wire.MsgTx
 	index                 uint32
-}
-
-// BackEnd returns "mock" to signify a mock wallet controller.
-func (*mockWalletController) BackEnd() string {
-	return "mock"
 }
 
 // FetchInputInfo will be called to get info about the inputs to the funding

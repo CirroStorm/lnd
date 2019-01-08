@@ -29,6 +29,7 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/btcwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/hwwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/routing/chainview"
 )
@@ -495,6 +496,15 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 			homeChainConfig.Node)
 	}
 
+	hwwalletConfig := &hwwallet.Config{
+		Birthday:       birthday,
+		RecoveryWindow: recoveryWindow,
+		FeeEstimator:   cc.feeEstimator,
+		CoinType:       activeNetParams.CoinType,
+	}
+
+	hwwallet.New(*hwwalletConfig)
+
 	wc, err := btcwallet.New(*walletConfig)
 	if err != nil {
 		fmt.Printf("unable to create wallet controller: %v\n", err)
@@ -506,7 +516,6 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 
 	cc.msgSigner = wc
 	cc.signer = wc
-	cc.chainIO = wc
 	cc.wc = wc
 
 	// Select the default channel constraints for the primary chain.
@@ -529,7 +538,7 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 		Signer:             cc.signer,
 		FeeEstimator:       cc.feeEstimator,
 		SecretKeyRing:      keyRing,
-		ChainIO:            cc.chainIO,
+		ChainIO:            walletConfig.ChainSource,
 		DefaultConstraints: channelConstraints,
 		NetParams:          *activeNetParams.Params,
 	}
@@ -552,6 +561,7 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 	ltndLog.Info("LightningWallet opened")
 
 	cc.wallet = lnWallet
+	cc.chainIO = lnWallet
 
 	return cc, cleanUp, nil
 }

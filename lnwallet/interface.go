@@ -216,11 +216,6 @@ type WalletController interface {
 	// Stop signals the wallet for shutdown. Shutdown may entail closing
 	// any active sockets, database handles, stopping goroutines, etc.
 	Stop() error
-
-	// BackEnd returns a name for the wallet's backing chain service,
-	// which could be e.g. btcd, bitcoind, neutrino, or another consensus
-	// service.
-	BackEnd() string
 }
 
 // BlockChainIO is a dedicated source which will be used to obtain queries
@@ -251,6 +246,15 @@ type BlockChainIO interface {
 	// GetBlock returns the block in the main chain identified by the given
 	// hash.
 	GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error)
+
+	// some backends (ie Neutrino) do not support unconfirmed transactions
+	SupportsUnconfirmedTransactions() bool
+
+	// this is only used in interface_test.go because neutrino needs a short
+	// delay when starting up otherwise the test fails
+	// I think this is because of a problem with IsSynced() when using neutrino
+	// When that is fixed this can be removed
+	WaitForBackendToStart()
 }
 
 // MessageSigner represents an abstract object capable of signing arbitrary
