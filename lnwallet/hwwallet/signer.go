@@ -1,6 +1,8 @@
 package hwwallet
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
@@ -42,10 +44,43 @@ func (b *HwWallet) SignOutputRaw(tx *wire.MsgTx,
 // This is a part of the WalletController interface.
 func (b *HwWallet) ComputeInputScript(tx *wire.MsgTx,
 	signDesc *lnwallet.SignDescriptor) (*lnwallet.InputScript, error) {
-	// TODO call rpc
-	pc, _, _, _ := runtime.Caller(1)
-	panic(fmt.Sprintf("%s", runtime.FuncForPC(pc).Name()))
-	return nil, nil
+
+	sd := SignDescriptor{
+		KeyDesc: &KeyDescriptor{
+			KeyLoc: &KeyLocator{
+				KeyFamily: uint32(signDesc.KeyDesc.Family),
+				KeyIndex:  signDesc.KeyDesc.Index,
+			},
+			RawKeyBytes: signDesc.KeyDesc.PubKey.SerializeCompressed(),
+		},
+		SingleTweak:   signDesc.SingleTweak,
+		DoubleTweak:   signDesc.DoubleTweak.Serialize(),
+		WitnessScript: signDesc.WitnessScript,
+		Output: &TxOut{
+			Value:    signDesc.Output.Value,
+			PkScript: signDesc.Output.PkScript,
+		},
+		Sighash:    uint32(signDesc.HashType),
+		InputIndex: int32(signDesc.InputIndex),
+	}
+
+	var txBuf bytes.Buffer
+	err := tx.Serialize(&txBuf)
+	if err != nil {
+		return nil, err
+	}
+
+	req := ComputeInputScriptReq{txBuf.Bytes(), &sd}
+	resp, err := b.client.ComputeInputScript(context.Background(), &req)
+	if err != nil {
+		return nil, err
+	}
+
+	// fortunetly the response struct is simple enough that we can just cast it
+	is := *resp.GetInputScript()
+	result := lnwallet.InputScript{Witness: is.Witness, SigScript: is.ScriptSig}
+
+	return &result, nil
 }
 
 // A compile time check to ensure that BtcWallet implements the Signer

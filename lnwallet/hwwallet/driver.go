@@ -28,14 +28,6 @@ func createNewWallet(args ...interface{}) (lnwallet.WalletController, error) {
 	return New(*config)
 }
 
-func BackEnds() []string {
-	return []string{
-		"bitcoind",
-		"btcd",
-		"neutrino",
-	}
-}
-
 // init registers a driver for the HwWallet concrete implementation of the
 // lnwallet.WalletController interface.
 func init() {
@@ -43,7 +35,6 @@ func init() {
 	driver := &lnwallet.WalletDriver{
 		WalletType: walletType,
 		New:        createNewWallet,
-		BackEnds:   BackEnds,
 	}
 
 	if err := lnwallet.RegisterWallet(driver); err != nil {
