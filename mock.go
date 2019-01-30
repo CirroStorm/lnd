@@ -3,19 +3,18 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/btcsuite/btcwallet/chain"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"sync"
-	"sync/atomic"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/input"
-	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
@@ -174,6 +173,42 @@ type mockChainIO struct {
 	bestHeight int32
 }
 
+func (m *mockChainIO) WaitForShutdown() {
+	panic("implement me")
+}
+
+func (m *mockChainIO) FilterBlocks(*chain.FilterBlocksRequest) (*chain.FilterBlocksResponse, error) {
+	panic("implement me")
+}
+
+func (m *mockChainIO) BlockStamp() (*waddrmgr.BlockStamp, error) {
+	return &waddrmgr.BlockStamp{Height: m.bestHeight, Timestamp: time.Now()}, nil
+}
+
+func (m *mockChainIO) SendRawTransaction(*wire.MsgTx, bool) (*chainhash.Hash, error) {
+	panic("implement me")
+}
+
+func (m *mockChainIO) Rescan(*chainhash.Hash, []btcutil.Address, map[wire.OutPoint]btcutil.Address) error {
+	panic("implement me")
+}
+
+func (m *mockChainIO) NotifyReceived([]btcutil.Address) error {
+	panic("implement me")
+}
+
+func (m *mockChainIO) NotifyBlocks() error {
+	panic("implement me")
+}
+
+func (m *mockChainIO) Notifications() <-chan interface{} {
+	panic("implement me")
+}
+
+func (m *mockChainIO) BackEnd() string {
+	panic("implement me")
+}
+
 func (m *mockChainIO) GetBestBlock() (*chainhash.Hash, int32, error) {
 	return activeNetParams.GenesisHash, m.bestHeight, nil
 }
@@ -191,116 +226,32 @@ func (*mockChainIO) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) 
 	return nil, nil
 }
 
+func (b *mockChainIO) GetBackend() chain.Interface {
+	return b
+}
+
+func (b *mockChainIO) GetBlockHeader(
+	blockHash *chainhash.Hash) (*wire.BlockHeader, error) {
+
+	return &wire.BlockHeader{Timestamp: time.Now()}, nil
+}
+
+func (b *mockChainIO) ReturnPublishTransactionError(err error) error {
+	return nil
+}
+
+func (b *mockChainIO) Start() error {
+	return nil
+}
+
+func (b *mockChainIO) Stop() {
+}
+
 func (*mockChainIO) SupportsUnconfirmedTransactions() bool {
 	return true
 }
 
 func (*mockChainIO) WaitForBackendToStart() {
-}
-
-// mockWalletController is used by the LightningWallet, and let us mock the
-// interaction with the bitcoin network.
-type mockWalletController struct {
-	rootKey               *btcec.PrivateKey
-	prevAddres            btcutil.Address
-	publishedTransactions chan *wire.MsgTx
-	index                 uint32
-}
-
-// FetchInputInfo will be called to get info about the inputs to the funding
-// transaction.
-func (*mockWalletController) FetchInputInfo(
-	prevOut *wire.OutPoint) (*wire.TxOut, error) {
-	txOut := &wire.TxOut{
-		Value:    int64(10 * btcutil.SatoshiPerBitcoin),
-		PkScript: []byte("dummy"),
-	}
-	return txOut, nil
-}
-func (*mockWalletController) ConfirmedBalance(confs int32) (btcutil.Amount, error) {
-	return 0, nil
-}
-
-// NewAddress is called to get new addresses for delivery, change etc.
-func (m *mockWalletController) NewAddress(addrType lnwallet.AddressType,
-	change bool) (btcutil.Address, error) {
-	addr, _ := btcutil.NewAddressPubKey(
-		m.rootKey.PubKey().SerializeCompressed(), &chaincfg.MainNetParams)
-	return addr, nil
-}
-func (*mockWalletController) IsOurAddress(a btcutil.Address) bool {
-	return false
-}
-
-func (*mockWalletController) SendOutputs(outputs []*wire.TxOut,
-	_ lnwallet.SatPerKWeight) (*wire.MsgTx, error) {
-
-	return nil, nil
-}
-
-// ListUnspentWitness is called by the wallet when doing coin selection. We just
-// need one unspent for the funding transaction.
-func (m *mockWalletController) ListUnspentWitness(minconfirms,
-	maxconfirms int32) ([]*lnwallet.Utxo, error) {
-	utxo := &lnwallet.Utxo{
-		AddressType: lnwallet.WitnessPubKey,
-		Value:       btcutil.Amount(10 * btcutil.SatoshiPerBitcoin),
-		PkScript:    make([]byte, 22),
-		OutPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{},
-			Index: m.index,
-		},
-	}
-	atomic.AddUint32(&m.index, 1)
-	var ret []*lnwallet.Utxo
-	ret = append(ret, utxo)
-	return ret, nil
-}
-func (*mockWalletController) ListTransactionDetails() ([]*lnwallet.TransactionDetail, error) {
-	return nil, nil
-}
-func (*mockWalletController) LockOutpoint(o wire.OutPoint)   {}
-func (*mockWalletController) UnlockOutpoint(o wire.OutPoint) {}
-func (m *mockWalletController) PublishTransaction(tx *wire.MsgTx) error {
-	m.publishedTransactions <- tx
-	return nil
-}
-func (*mockWalletController) SubscribeTransactions() (lnwallet.TransactionSubscription, error) {
-	return nil, nil
-}
-func (*mockWalletController) IsSynced() (bool, int64, error) {
-	return true, int64(0), nil
-}
-func (*mockWalletController) Start() error {
-	return nil
-}
-func (*mockWalletController) Stop() error {
-	return nil
-}
-
-type mockSecretKeyRing struct {
-	rootKey *btcec.PrivateKey
-}
-
-func (m *mockSecretKeyRing) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.KeyDescriptor, error) {
-	return keychain.KeyDescriptor{
-		PubKey: m.rootKey.PubKey(),
-	}, nil
-}
-
-func (m *mockSecretKeyRing) DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescriptor, error) {
-	return keychain.KeyDescriptor{
-		PubKey: m.rootKey.PubKey(),
-	}, nil
-}
-
-func (m *mockSecretKeyRing) DerivePrivKey(keyDesc keychain.KeyDescriptor) (*btcec.PrivateKey, error) {
-	return m.rootKey, nil
-}
-
-func (m *mockSecretKeyRing) ScalarMult(keyDesc keychain.KeyDescriptor,
-	pubKey *btcec.PublicKey) ([]byte, error) {
-	return nil, nil
 }
 
 type mockPreimageCache struct {

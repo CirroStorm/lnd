@@ -3,6 +3,7 @@ package chanbackup
 import (
 	"bytes"
 	"fmt"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"net"
 	"testing"
 
@@ -48,7 +49,7 @@ func (m *mockPeerConnector) ConnectPeer(node *btcec.PublicKey,
 func TestUnpackAndRecoverSingles(t *testing.T) {
 	t.Parallel()
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	// First, we'll create a number of single chan backups that we'll
 	// shortly back to so we can begin our recovery attempt.
@@ -64,7 +65,7 @@ func TestUnpackAndRecoverSingles(t *testing.T) {
 		single := NewSingle(channel, nil)
 
 		var b bytes.Buffer
-		if err := single.PackToWriter(&b, keyRing); err != nil {
+		if err := single.PackToWriter(&b, wallet); err != nil {
 			t.Fatalf("unable to pack single: %v", err)
 		}
 
@@ -82,7 +83,7 @@ func TestUnpackAndRecoverSingles(t *testing.T) {
 	// as well
 	chanRestorer.fail = true
 	err := UnpackAndRecoverSingles(
-		packedBackups, keyRing, &chanRestorer, &peerConnector,
+		packedBackups, wallet, &chanRestorer, &peerConnector,
 	)
 	if err == nil {
 		t.Fatalf("restoration should have failed")
@@ -94,7 +95,7 @@ func TestUnpackAndRecoverSingles(t *testing.T) {
 	// well
 	peerConnector.fail = true
 	err = UnpackAndRecoverSingles(
-		packedBackups, keyRing, &chanRestorer, &peerConnector,
+		packedBackups, wallet, &chanRestorer, &peerConnector,
 	)
 	if err == nil {
 		t.Fatalf("restoration should have failed")
@@ -106,7 +107,7 @@ func TestUnpackAndRecoverSingles(t *testing.T) {
 	// Next, we'll ensure that if all the interfaces function as expected,
 	// then the channels will properly be unpacked and restored.
 	err = UnpackAndRecoverSingles(
-		packedBackups, keyRing, &chanRestorer, &peerConnector,
+		packedBackups, wallet, &chanRestorer, &peerConnector,
 	)
 	if err != nil {
 		t.Fatalf("unable to recover chans: %v", err)
@@ -124,9 +125,9 @@ func TestUnpackAndRecoverSingles(t *testing.T) {
 	}
 
 	// If we modify the keyRing, then unpacking should fail.
-	keyRing.fail = true
+	wallet.Fail = true
 	err = UnpackAndRecoverSingles(
-		packedBackups, keyRing, &chanRestorer, &peerConnector,
+		packedBackups, wallet, &chanRestorer, &peerConnector,
 	)
 	if err == nil {
 		t.Fatalf("unpacking should have failed")
@@ -140,7 +141,7 @@ func TestUnpackAndRecoverSingles(t *testing.T) {
 func TestUnpackAndRecoverMulti(t *testing.T) {
 	t.Parallel()
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	// First, we'll create a number of single chan backups that we'll
 	// shortly back to so we can begin our recovery attempt.
@@ -162,7 +163,7 @@ func TestUnpackAndRecoverMulti(t *testing.T) {
 	}
 
 	var b bytes.Buffer
-	if err := multi.PackToWriter(&b, keyRing); err != nil {
+	if err := multi.PackToWriter(&b, wallet); err != nil {
 		t.Fatalf("unable to pack multi: %v", err)
 	}
 
@@ -178,7 +179,7 @@ func TestUnpackAndRecoverMulti(t *testing.T) {
 	// as well
 	chanRestorer.fail = true
 	err := UnpackAndRecoverMulti(
-		packedMulti, keyRing, &chanRestorer, &peerConnector,
+		packedMulti, wallet, &chanRestorer, &peerConnector,
 	)
 	if err == nil {
 		t.Fatalf("restoration should have failed")
@@ -190,7 +191,7 @@ func TestUnpackAndRecoverMulti(t *testing.T) {
 	// well
 	peerConnector.fail = true
 	err = UnpackAndRecoverMulti(
-		packedMulti, keyRing, &chanRestorer, &peerConnector,
+		packedMulti, wallet, &chanRestorer, &peerConnector,
 	)
 	if err == nil {
 		t.Fatalf("restoration should have failed")
@@ -202,7 +203,7 @@ func TestUnpackAndRecoverMulti(t *testing.T) {
 	// Next, we'll ensure that if all the interfaces function as expected,
 	// then the channels will properly be unpacked and restored.
 	err = UnpackAndRecoverMulti(
-		packedMulti, keyRing, &chanRestorer, &peerConnector,
+		packedMulti, wallet, &chanRestorer, &peerConnector,
 	)
 	if err != nil {
 		t.Fatalf("unable to recover chans: %v", err)
@@ -220,9 +221,9 @@ func TestUnpackAndRecoverMulti(t *testing.T) {
 	}
 
 	// If we modify the keyRing, then unpacking should fail.
-	keyRing.fail = true
+	wallet.Fail = true
 	err = UnpackAndRecoverMulti(
-		packedMulti, keyRing, &chanRestorer, &peerConnector,
+		packedMulti, wallet, &chanRestorer, &peerConnector,
 	)
 	if err == nil {
 		t.Fatalf("unpacking should have failed")

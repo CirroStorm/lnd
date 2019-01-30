@@ -3,6 +3,7 @@ package chanbackup
 import (
 	"bytes"
 	"fmt"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -188,7 +189,7 @@ func assertMultiEqual(t *testing.T, a, b *Multi) {
 func TestExtractMulti(t *testing.T) {
 	t.Parallel()
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	// First, as prep, we'll create a single chan backup, then pack that
 	// fully into a multi backup.
@@ -203,7 +204,7 @@ func TestExtractMulti(t *testing.T) {
 	unpackedMulti := Multi{
 		StaticBackups: []Single{singleBackup},
 	}
-	err = unpackedMulti.PackToWriter(&b, keyRing)
+	err = unpackedMulti.PackToWriter(&b, wallet)
 	if err != nil {
 		t.Fatalf("unable to pack to writer: %v", err)
 	}
@@ -255,7 +256,7 @@ func TestExtractMulti(t *testing.T) {
 
 		// With our file made, we'll now attempt to read out the
 		// multi-file.
-		freshUnpackedMulti, err := backupFile.ExtractMulti(keyRing)
+		freshUnpackedMulti, err := backupFile.ExtractMulti(wallet)
 		switch {
 		// If this is a valid test case, and we failed, then we'll
 		// return an error.
@@ -279,7 +280,7 @@ func TestExtractMulti(t *testing.T) {
 
 		// We should also be able to read the file again, as we have an
 		// existing handle to it.
-		freshUnpackedMulti, err = backupFile.ExtractMulti(keyRing)
+		freshUnpackedMulti, err = backupFile.ExtractMulti(wallet)
 		if err != nil {
 			t.Fatalf("unable to unpack multi: %v", err)
 		}

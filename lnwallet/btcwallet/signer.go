@@ -99,7 +99,7 @@ func (b *BtcWallet) fetchPrivKey(keyDesc *keychain.KeyDescriptor) (*btcec.Privat
 
 		var key *btcec.PrivateKey
 		err = walletdb.View(b.db, func(tx walletdb.ReadTx) error {
-			addrmgrNs := tx.ReadBucket(waddrmgrNamespaceKey)
+			addrmgrNs := tx.ReadBucket(WaddrmgrNamespaceKey)
 
 			path := waddrmgr.DerivationPath{
 				Account: uint32(keyDesc.Family),

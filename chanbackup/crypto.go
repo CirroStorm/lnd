@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"io"
 	"io/ioutil"
 
@@ -32,9 +33,9 @@ var baseEncryptionKeyLoc = keychain.KeyLocator{
 // the keyring. We derive the key this way as we don't force the HSM (or any
 // future abstractions) to be able to derive and know of the cipher that we'll
 // use within our protocol.
-func genEncryptionKey(keyRing keychain.KeyRing) ([]byte, error) {
+func genEncryptionKey(wallet lnwallet.WalletController) ([]byte, error) {
 	//  key = SHA256(baseKey)
-	baseKey, err := keyRing.DeriveKey(
+	baseKey, err := wallet.DeriveKey(
 		baseEncryptionKeyLoc,
 	)
 	if err != nil {
@@ -57,14 +58,14 @@ func genEncryptionKey(keyRing keychain.KeyRing) ([]byte, error) {
 // use the passed keyRing to generate the encryption key, see genEncryptionKey
 // for further details.
 func encryptPayloadToWriter(payload bytes.Buffer, w io.Writer,
-	keyRing keychain.KeyRing) error {
+	wallet lnwallet.WalletController) error {
 
 	// First, we'll derive the key that we'll use to encrypt the payload
 	// for safe storage without giving away the details of any of our
 	// channels.  The final operation is:
 	//
 	//  key = SHA256(baseKey)
-	encryptionKey, err := genEncryptionKey(keyRing)
+	encryptionKey, err := genEncryptionKey(wallet)
 	if err != nil {
 		return err
 	}
@@ -101,11 +102,11 @@ func encryptPayloadToWriter(payload bytes.Buffer, w io.Writer,
 // further details regarding the key derivation protocol, see the
 // genEncryptionKey method.
 func decryptPayloadFromReader(payload io.Reader,
-	keyRing keychain.KeyRing) ([]byte, error) {
+	wallet lnwallet.WalletController) ([]byte, error) {
 
 	// First, we'll re-generate the encryption key that we use for all the
 	// SCBs.
-	encryptionKey, err := genEncryptionKey(keyRing)
+	encryptionKey, err := genEncryptionKey(wallet)
 	if err != nil {
 		return nil, err
 	}

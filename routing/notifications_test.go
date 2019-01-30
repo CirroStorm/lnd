@@ -2,6 +2,7 @@ package routing
 
 import (
 	"fmt"
+	"github.com/btcsuite/btcwallet/chain"
 	"image/color"
 	"net"
 	"sync"
@@ -116,7 +117,7 @@ func createChannelEdge(ctx *testCtx, bitcoinKey1, bitcoinKey2 []byte,
 	return fundingTx, &chanUtxo, chanID, nil
 }
 
-type mockChain struct {
+type mockChainIO struct {
 	blocks     map[chainhash.Hash]*wire.MsgBlock
 	blockIndex map[uint32]chainhash.Hash
 
@@ -128,12 +129,12 @@ type mockChain struct {
 	sync.RWMutex
 }
 
-// A compile time check to ensure mockChain implements the
+// A compile time check to ensure mockChainIO implements the
 // lnwallet.BlockChainIO interface.
-var _ lnwallet.BlockChainIO = (*mockChain)(nil)
+var _ lnwallet.BlockChainIO = (*mockChainIO)(nil)
 
-func newMockChain(currentHeight uint32) *mockChain {
-	return &mockChain{
+func newMockChain(currentHeight uint32) *mockChainIO {
+	return &mockChainIO{
 		bestHeight: int32(currentHeight),
 		blocks:     make(map[chainhash.Hash]*wire.MsgBlock),
 		utxos:      make(map[wire.OutPoint]wire.TxOut),
@@ -141,14 +142,14 @@ func newMockChain(currentHeight uint32) *mockChain {
 	}
 }
 
-func (m *mockChain) setBestBlock(height int32) {
+func (m *mockChainIO) setBestBlock(height int32) {
 	m.Lock()
 	defer m.Unlock()
 
 	m.bestHeight = height
 }
 
-func (m *mockChain) GetBestBlock() (*chainhash.Hash, int32, error) {
+func (m *mockChainIO) GetBestBlock() (*chainhash.Hash, int32, error) {
 	m.RLock()
 	defer m.RUnlock()
 
@@ -157,11 +158,11 @@ func (m *mockChain) GetBestBlock() (*chainhash.Hash, int32, error) {
 	return &blockHash, m.bestHeight, nil
 }
 
-func (m *mockChain) GetTransaction(txid *chainhash.Hash) (*wire.MsgTx, error) {
+func (m *mockChainIO) GetTransaction(txid *chainhash.Hash) (*wire.MsgTx, error) {
 	return nil, nil
 }
 
-func (m *mockChain) GetBlockHash(blockHeight int64) (*chainhash.Hash, error) {
+func (m *mockChainIO) GetBlockHash(blockHeight int64) (*chainhash.Hash, error) {
 	m.RLock()
 	defer m.RUnlock()
 
@@ -174,12 +175,13 @@ func (m *mockChain) GetBlockHash(blockHeight int64) (*chainhash.Hash, error) {
 	return &hash, nil
 }
 
-func (m *mockChain) addUtxo(op wire.OutPoint, out *wire.TxOut) {
+func (m *mockChainIO) addUtxo(op wire.OutPoint, out *wire.TxOut) {
 	m.Lock()
 	m.utxos[op] = *out
 	m.Unlock()
 }
-func (m *mockChain) GetUtxo(op *wire.OutPoint, _ []byte, _ uint32) (*wire.TxOut, error) {
+
+func (m *mockChainIO) GetUtxo(op *wire.OutPoint, _ []byte, _ uint32) (*wire.TxOut, error) {
 	m.RLock()
 	defer m.RUnlock()
 
@@ -191,7 +193,7 @@ func (m *mockChain) GetUtxo(op *wire.OutPoint, _ []byte, _ uint32) (*wire.TxOut,
 	return &utxo, nil
 }
 
-func (m *mockChain) addBlock(block *wire.MsgBlock, height uint32, nonce uint32) {
+func (m *mockChainIO) addBlock(block *wire.MsgBlock, height uint32, nonce uint32) {
 	m.Lock()
 	block.Header.Nonce = nonce
 	hash := block.Header.BlockHash()
@@ -199,7 +201,8 @@ func (m *mockChain) addBlock(block *wire.MsgBlock, height uint32, nonce uint32) 
 	m.blockIndex[height] = hash
 	m.Unlock()
 }
-func (m *mockChain) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) {
+
+func (m *mockChainIO) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) {
 	m.RLock()
 	defer m.RUnlock()
 
@@ -209,6 +212,33 @@ func (m *mockChain) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) 
 	}
 
 	return block, nil
+}
+
+func (b *mockChainIO) GetBackend() chain.Interface {
+	return nil
+}
+
+func (b *mockChainIO) GetBlockHeader(
+	blockHash *chainhash.Hash) (*wire.BlockHeader, error) {
+	return nil, nil
+}
+
+func (b *mockChainIO) ReturnPublishTransactionError(err error) error {
+	return nil
+}
+
+func (b *mockChainIO) Start() error {
+	return nil
+}
+
+func (b *mockChainIO) Stop() {
+}
+
+func (*mockChainIO) SupportsUnconfirmedTransactions() bool {
+	return true
+}
+
+func (*mockChainIO) WaitForBackendToStart() {
 }
 
 type mockChainView struct {

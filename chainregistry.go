@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/lightningnetwork/lnd/lnwallet/chains"
 	"io/ioutil"
 	"net"
 	"os"
@@ -109,10 +110,6 @@ type chainControl struct {
 
 	signer input.Signer
 
-	keyRing keychain.KeyRing
-
-	wc lnwallet.WalletController
-
 	msgSigner lnwallet.MessageSigner
 
 	chainNotifier chainntnfs.ChainNotifier
@@ -170,18 +167,6 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 			"chain %v is unknown", registeredChains.PrimaryChain())
 	}
 
-	walletConfig := &btcwallet.Config{
-		PrivatePass:    privateWalletPw,
-		PublicPass:     publicWalletPw,
-		Birthday:       birthday,
-		RecoveryWindow: recoveryWindow,
-		DataDir:        homeChainConfig.ChainDir,
-		NetParams:      activeNetParams.Params,
-		FeeEstimator:   cc.feeEstimator,
-		CoinType:       activeNetParams.CoinType,
-		Wallet:         wallet,
-	}
-
 	var (
 		err     error
 		cleanUp func()
@@ -193,6 +178,8 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 		return nil, nil, fmt.Errorf("unable to initialize height hint "+
 			"cache: %v", err)
 	}
+
+	var chainSource lnwallet.BlockChainIO
 
 	// If spv mode is active, then we'll be using a distinct set of
 	// chainControl interfaces that interface directly with the p2p network
@@ -273,9 +260,9 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 		// Finally, we'll set the chain source for btcwallet, and
 		// create our clean up function which simply closes the
 		// database.
-		walletConfig.ChainSource = chain.NewNeutrinoClient(
-			activeNetParams.Params, svc,
-		)
+		chainSource = chains.NewNeutrinoChain(chain.NewNeutrinoClient(
+			activeNetParams.Params, svc))
+
 	case "bitcoind", "litecoind":
 		var bitcoindMode *bitcoindConfig
 		switch {
@@ -338,7 +325,7 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 			bitcoindConn, activeNetParams.Params, hintCache, hintCache,
 		)
 		cc.chainView = chainview.NewBitcoindFilteredChainView(bitcoindConn)
-		walletConfig.ChainSource = bitcoindConn.NewBitcoindClient()
+		chainSource = chains.NewBitcoindChain(bitcoindConn.NewBitcoindClient())
 
 		// If we're not in regtest mode, then we'll attempt to use a
 		// proper fee estimator for testnet.
@@ -467,7 +454,7 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 			return nil, nil, err
 		}
 
-		walletConfig.ChainSource = chainRPC
+		chainSource = chains.NewBtcdChain(chainRPC)
 
 		// If we're not in simnet or regtest mode, then we'll attempt
 		// to use a proper fee estimator for testnet.
@@ -496,16 +483,37 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 			homeChainConfig.Node)
 	}
 
-	hwwalletConfig := &hwwallet.Config{
-		Birthday:       birthday,
-		RecoveryWindow: recoveryWindow,
-		FeeEstimator:   cc.feeEstimator,
-		CoinType:       activeNetParams.CoinType,
+	var wc lnwallet.WalletController
+
+	if cfg.WalletDriver == "btcwallet" {
+		walletConfig := &btcwallet.Config{
+			PrivatePass:    privateWalletPw,
+			PublicPass:     publicWalletPw,
+			Birthday:       birthday,
+			RecoveryWindow: recoveryWindow,
+			DataDir:        homeChainConfig.ChainDir,
+			NetParams:      activeNetParams.Params,
+			FeeEstimator:   cc.feeEstimator,
+			CoinType:       activeNetParams.CoinType,
+			Wallet:         wallet,
+			ChainSource:    chainSource,
+		}
+
+		wc, err = btcwallet.New(*walletConfig)
+	} else if cfg.WalletDriver == "hwwallet" {
+		hwwalletConfig := &hwwallet.Config{
+			Birthday:       birthday,
+			RecoveryWindow: recoveryWindow,
+			FeeEstimator:   cc.feeEstimator,
+			CoinType:       activeNetParams.CoinType,
+		}
+
+		wc, err = hwwallet.New(*hwwalletConfig)
+	} else {
+		return nil, nil, fmt.Errorf("unknown wallet driver: %s",
+			cfg.WalletDriver)
 	}
 
-	hwwallet.New(*hwwalletConfig)
-
-	wc, err := btcwallet.New(*walletConfig)
 	if err != nil {
 		fmt.Printf("unable to create wallet controller: %v\n", err)
 		if cleanUp != nil {
@@ -514,20 +522,14 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 		return nil, nil, err
 	}
 
-	cc.msgSigner = wc
-	cc.signer = wc
-	cc.wc = wc
+	cc.msgSigner = wc.(lnwallet.MessageSigner)
+	cc.signer = wc.(lnwallet.Signer)
 
 	// Select the default channel constraints for the primary chain.
 	channelConstraints := defaultBtcChannelConstraints
 	if registeredChains.PrimaryChain() == litecoinChain {
 		channelConstraints = defaultLtcChannelConstraints
 	}
-
-	keyRing := keychain.NewBtcWalletKeyRing(
-		wc.InternalWallet(), activeNetParams.CoinType,
-	)
-	cc.keyRing = keyRing
 
 	// Create, and start the lnwallet, which handles the core payment
 	// channel logic, and exposes control via proxy state machines.
@@ -537,8 +539,8 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 		WalletController:   wc,
 		Signer:             cc.signer,
 		FeeEstimator:       cc.feeEstimator,
-		SecretKeyRing:      keyRing,
-		ChainIO:            walletConfig.ChainSource,
+		CoinType:           activeNetParams.CoinType,
+		ChainIO:            chainSource,
 		DefaultConstraints: channelConstraints,
 		NetParams:          *activeNetParams.Params,
 	}
@@ -561,7 +563,7 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 	ltndLog.Info("LightningWallet opened")
 
 	cc.wallet = lnWallet
-	cc.chainIO = lnWallet
+	cc.chainIO = lnWallet.Chain
 
 	return cc, cleanUp, nil
 }

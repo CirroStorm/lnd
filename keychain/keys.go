@@ -1,10 +1,6 @@
 package keychain
 
-import (
-	"fmt"
-
-	"github.com/btcsuite/btcd/btcec"
-)
+import "github.com/btcsuite/btcd/btcec"
 
 const (
 	// KeyDerivationVersion is the version of the key derivation schema
@@ -22,18 +18,6 @@ const (
 	//
 	// NOTE: BRICK SQUUUUUAD.
 	BIP0043Purpose = 1017
-)
-
-var (
-	// MaxKeyRangeScan is the maximum number of keys that we'll attempt to
-	// scan with if a caller knows the public key, but not the KeyLocator
-	// and wishes to derive a private key.
-	MaxKeyRangeScan = 100000
-
-	// ErrCannotDerivePrivKey is returned when DerivePrivKey is unable to
-	// derive a private key given only the public key and target key
-	// family.
-	ErrCannotDerivePrivKey = fmt.Errorf("unable to derive private key")
 )
 
 // KeyFamily represents a "family" of keys that will be used within various
@@ -134,51 +118,6 @@ type KeyDescriptor struct {
 	// PubKey is an optional public key that fully describes a target key.
 	// If this is nil, the KeyLocator MUST NOT be empty.
 	PubKey *btcec.PublicKey
-}
-
-// KeyRing is the primary interface that will be used to perform public
-// derivation of various keys used within the peer-to-peer network, and also
-// within any created contracts. All derivation required by the KeyRing is
-// based off of public derivation, so a system with only an extended public key
-// (for the particular purpose+family) can derive this set of keys.
-type KeyRing interface {
-	// DeriveNextKey attempts to derive the *next* key within the key
-	// family (account in BIP43) specified. This method should return the
-	// next external child within this branch.
-	DeriveNextKey(keyFam KeyFamily) (KeyDescriptor, error)
-
-	// DeriveKey attempts to derive an arbitrary key specified by the
-	// passed KeyLocator. This may be used in several recovery scenarios,
-	// or when manually rotating something like our current default node
-	// key.
-	DeriveKey(keyLoc KeyLocator) (KeyDescriptor, error)
-}
-
-// SecretKeyRing is a similar to the regular KeyRing interface, but it is also
-// able to derive *private keys*. As this is a super-set of the regular
-// KeyRing, we also expect the SecretKeyRing to implement the fully KeyRing
-// interface. The methods in this struct may be used to extract the node key in
-// order to accept inbound network connections, or to do manual signing for
-// recovery purposes.
-type SecretKeyRing interface {
-	KeyRing
-
-	// DerivePrivKey attempts to derive the private key that corresponds to
-	// the passed key descriptor.  If the public key is set, then this
-	// method will perform an in-order scan over the key set, with a max of
-	// MaxKeyRangeScan keys. In order for this to work, the caller MUST set
-	// the KeyFamily within the partially populated KeyLocator.
-	DerivePrivKey(keyDesc KeyDescriptor) (*btcec.PrivateKey, error)
-
-	// ScalarMult performs a scalar multiplication (ECDH-like operation)
-	// between the target key descriptor and remote public key. The output
-	// returned will be the sha256 of the resulting shared point serialized
-	// in compressed format. If k is our private key, and P is the public
-	// key, we perform the following operation:
-	//
-	//  sx := k*P
-	//  s := sha256(sx.SerializeCompressed())
-	ScalarMult(keyDesc KeyDescriptor, pubKey *btcec.PublicKey) ([]byte, error)
 }
 
 // TODO(roasbeef): extend to actually support scalar mult of key?

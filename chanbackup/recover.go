@@ -1,11 +1,11 @@
 package chanbackup
 
 import (
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"net"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightningnetwork/lnd/keychain"
 )
 
 // ChannelRestorer is an interface that allows the Recover method to map the
@@ -84,10 +84,10 @@ func Recover(backups []Single, restorer ChannelRestorer,
 // able to be established, then then PeerConnector will continue to attempt to
 // re-establish a persistent connection in the background.
 func UnpackAndRecoverSingles(singles PackedSingles,
-	keyChain keychain.KeyRing, restorer ChannelRestorer,
+	wallet lnwallet.WalletController, restorer ChannelRestorer,
 	peerConnector PeerConnector) error {
 
-	chanBackups, err := singles.Unpack(keyChain)
+	chanBackups, err := singles.Unpack(wallet)
 	if err != nil {
 		return err
 	}
@@ -102,10 +102,10 @@ func UnpackAndRecoverSingles(singles PackedSingles,
 // able to be established, then then PeerConnector will continue to attempt to
 // re-establish a persistent connection in the background.
 func UnpackAndRecoverMulti(packedMulti PackedMulti,
-	keyChain keychain.KeyRing, restorer ChannelRestorer,
+	wallet lnwallet.WalletController, restorer ChannelRestorer,
 	peerConnector PeerConnector) error {
 
-	chanBackups, err := packedMulti.Unpack(keyChain)
+	chanBackups, err := packedMulti.Unpack(wallet)
 	if err != nil {
 		return err
 	}

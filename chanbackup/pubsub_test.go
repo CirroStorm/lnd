@@ -2,13 +2,13 @@ package chanbackup
 
 import (
 	"fmt"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightningnetwork/lnd/keychain"
 )
 
 type mockSwapper struct {
@@ -64,21 +64,21 @@ func (m *mockChannelNotifier) SubscribeChans(chans map[wire.OutPoint]struct{}) (
 func TestNewSubSwapperSubscribeFail(t *testing.T) {
 	t.Parallel()
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	var swapper mockSwapper
 	chanNotifier := mockChannelNotifier{
 		fail: true,
 	}
 
-	_, err := NewSubSwapper(nil, &chanNotifier, keyRing, &swapper)
+	_, err := NewSubSwapper(nil, &chanNotifier, wallet, &swapper)
 	if err == nil {
 		t.Fatalf("expected fail due to lack of subscription")
 	}
 }
 
 func assertExpectedBackupSwap(t *testing.T, swapper *mockSwapper,
-	subSwapper *SubSwapper, keyRing keychain.KeyRing,
+	subSwapper *SubSwapper, wallet lnwallet.WalletController,
 	expectedChanSet map[wire.OutPoint]Single) {
 
 	t.Helper()
@@ -88,7 +88,7 @@ func assertExpectedBackupSwap(t *testing.T, swapper *mockSwapper,
 		// If we unpack the new multi, then we should find all the old
 		// channels, and also the new channel included and any deleted
 		// channel omitted..
-		newMulti, err := newPackedMulti.Unpack(keyRing)
+		newMulti, err := newPackedMulti.Unpack(wallet)
 		if err != nil {
 			t.Fatalf("unable to unpack multi: %v", err)
 		}
@@ -129,14 +129,14 @@ func assertExpectedBackupSwap(t *testing.T, swapper *mockSwapper,
 func TestSubSwapperIdempotentStartStop(t *testing.T) {
 	t.Parallel()
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	var (
 		swapper      mockSwapper
 		chanNotifier mockChannelNotifier
 	)
 
-	subSwapper, err := NewSubSwapper(nil, &chanNotifier, keyRing, &swapper)
+	subSwapper, err := NewSubSwapper(nil, &chanNotifier, wallet, &swapper)
 	if err != nil {
 		t.Fatalf("unable to init subSwapper: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestSubSwapperIdempotentStartStop(t *testing.T) {
 func TestSubSwapperUpdater(t *testing.T) {
 	t.Parallel()
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 	chanNotifier := newMockChannelNotifier()
 	swapper := newMockSwapper()
 
@@ -178,7 +178,7 @@ func TestSubSwapperUpdater(t *testing.T) {
 	// With our channel set created, we'll make a fresh sub swapper
 	// instance to begin our test.
 	subSwapper, err := NewSubSwapper(
-		initialChanSet, chanNotifier, keyRing, swapper,
+		initialChanSet, chanNotifier, wallet, swapper,
 	)
 	if err != nil {
 		t.Fatalf("unable to make swapper: %v", err)
@@ -213,7 +213,7 @@ func TestSubSwapperUpdater(t *testing.T) {
 
 	// At this point, the sub-swapper should now have packed a new multi,
 	// and then sent it to the swapper so the back up can be updated.
-	assertExpectedBackupSwap(t, swapper, subSwapper, keyRing, backupSet)
+	assertExpectedBackupSwap(t, swapper, subSwapper, wallet, backupSet)
 
 	// We'll now trigger an update to remove an existing channel.
 	chanToDelete := initialChanSet[0].FundingOutpoint
@@ -230,5 +230,5 @@ func TestSubSwapperUpdater(t *testing.T) {
 
 	// Verify that the new set of backups, now has one less after the
 	// sub-swapper switches the new set with the old.
-	assertExpectedBackupSwap(t, swapper, subSwapper, keyRing, backupSet)
+	assertExpectedBackupSwap(t, swapper, subSwapper, wallet, backupSet)
 }

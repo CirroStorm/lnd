@@ -2,11 +2,10 @@ package chanbackup
 
 import (
 	"fmt"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-
-	"github.com/lightningnetwork/lnd/keychain"
 )
 
 const (
@@ -120,7 +119,7 @@ func (b *MultiFile) UpdateAndSwap(newBackup PackedMulti) error {
 // ExtractMulti attempts to extract the packed multi backup we currently point
 // to into an unpacked version. This method will fail if no backup file
 // currently exists as the specified location.
-func (b *MultiFile) ExtractMulti(keyChain keychain.KeyRing) (*Multi, error) {
+func (b *MultiFile) ExtractMulti(wallet lnwallet.WalletController) (*Multi, error) {
 	var err error
 
 	// If the backup file isn't already set, then we'll attempt to open it
@@ -156,5 +155,5 @@ func (b *MultiFile) ExtractMulti(keyChain keychain.KeyRing) (*Multi, error) {
 	// Finally, we'll attempt to unpack the file and return the unpack
 	// version to the caller.
 	packedMulti := PackedMulti(multiBytes)
-	return packedMulti.Unpack(keyChain)
+	return packedMulti.Unpack(wallet)
 }

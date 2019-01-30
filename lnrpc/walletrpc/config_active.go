@@ -3,7 +3,6 @@
 package walletrpc
 
 import (
-	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/macaroons"
 )

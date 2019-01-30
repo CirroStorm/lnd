@@ -3,29 +3,15 @@ package lnwallet
 import (
 	"errors"
 	"fmt"
+	"github.com/btcsuite/btcwallet/chain"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"sync"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-)
-
-// AddressType is an enum-like type which denotes the possible address types
-// WalletController supports.
-type AddressType uint8
-
-const (
-	// WitnessPubKey represents a p2wkh address.
-	WitnessPubKey AddressType = iota
-
-	// NestedWitnessPubKey represents a p2sh output which is itself a
-	// nested p2wkh output.
-	NestedWitnessPubKey
-
-	// UnknownAddressType represents an output with an unknown or non-standard
-	// script.
-	UnknownAddressType
+	"github.com/lightningnetwork/lnd/keychain"
 )
 
 var (
@@ -47,10 +33,36 @@ var (
 	ErrNotMine = errors.New("the passed output doesn't belong to the wallet")
 )
 
+const (
+	// CoinTypeBitcoin specifies the BIP44 coin type for Bitcoin key
+	// derivation.
+	CoinTypeBitcoin uint32 = 0
+
+	// CoinTypeTestnet specifies the BIP44 coin type for all testnet key
+	// derivation.
+	CoinTypeTestnet = 1
+
+	// CoinTypeLitecoin specifies the BIP44 coin type for Litecoin key
+	// derivation.
+	CoinTypeLitecoin = 2
+)
+
+var (
+	// MaxKeyRangeScan is the maximum number of keys that we'll attempt to
+	// scan with if a caller knows the public key, but not the KeyLocator
+	// and wishes to derive a private key.
+	MaxKeyRangeScan = 100000
+
+	// ErrCannotDerivePrivKey is returned when DerivePrivKey is unable to
+	// derive a private key given only the public key and target key
+	// family.
+	ErrCannotDerivePrivKey = fmt.Errorf("unable to derive private key")
+)
+
 // Utxo is an unspent output denoted by its outpoint, and output value of the
 // original output.
 type Utxo struct {
-	AddressType   AddressType
+	KeyScope      waddrmgr.KeyScope
 	Value         btcutil.Amount
 	Confirmations int64
 	PkScript      []byte
@@ -114,6 +126,14 @@ type TransactionSubscription interface {
 	Cancel()
 }
 
+// for security reasons we don't our private keys to actually contain
+// the private key secret
+// TODO improve this comment
+type PrivateKey interface {
+	PubKey() *btcec.PublicKey
+	ECDH(pubKey *btcec.PublicKey) ([]byte, error)
+}
+
 // WalletController defines an abstract interface for controlling a local Pure
 // Go wallet, a local or remote wallet via an RPC mechanism, or possibly even
 // a daemon assisted hardware wallet. This interface serves the purpose of
@@ -147,7 +167,7 @@ type WalletController interface {
 	// address should be returned. The type of address returned is dictated
 	// by the wallet's capabilities, and may be of type: p2sh, p2wkh,
 	// p2wsh, etc.
-	NewAddress(addrType AddressType, change bool) (btcutil.Address, error)
+	NewAddress(keyScope waddrmgr.KeyScope, change bool) (btcutil.Address, error)
 
 	// IsOurAddress checks if the passed address belongs to this wallet
 	IsOurAddress(a btcutil.Address) bool
@@ -203,12 +223,6 @@ type WalletController interface {
 	// TODO(roasbeef): make distinct interface?
 	SubscribeTransactions() (TransactionSubscription, error)
 
-	// IsSynced returns a boolean indicating if from the PoV of the wallet,
-	// it has fully synced to the current best block in the main chain.
-	// It also returns an int64 indicating the timestamp of the best block
-	// known to the wallet, expressed in Unix epoch time
-	IsSynced() (bool, int64, error)
-
 	// Start initializes the wallet, making any necessary connections,
 	// starting up required goroutines etc.
 	Start() error
@@ -216,6 +230,21 @@ type WalletController interface {
 	// Stop signals the wallet for shutdown. Shutdown may entail closing
 	// any active sockets, database handles, stopping goroutines, etc.
 	Stop() error
+
+	// DeriveNextKey attempts to derive the *next* key within the key
+	// family (account in BIP43) specified. This method should return the
+	// next external child within this branch.
+	DeriveNextKey(keyFam keychain.KeyFamily) (keychain.KeyDescriptor, error)
+
+	// DeriveKey attempts to derive an arbitrary key specified by the
+	// passed KeyLocator. This may be used in several recovery scenarios,
+	// or when manually rotating something like our current default node
+	// key.
+	DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescriptor, error)
+
+	GetRevocationRoot(nextRevocationKeyDesc keychain.KeyDescriptor) (*chainhash.Hash, error)
+
+	GetNodeKey() (*btcec.PrivateKey, error)
 }
 
 // BlockChainIO is a dedicated source which will be used to obtain queries
@@ -226,6 +255,8 @@ type WalletController interface {
 // TODO(roasbeef): move to diff package perhaps?
 // TODO(roasbeef): move publish txn here?
 type BlockChainIO interface {
+	GetBackend() chain.Interface
+
 	// GetBestBlock returns the current height and block hash of the valid
 	// most-work chain the implementation is aware of.
 	GetBestBlock() (*chainhash.Hash, int32, error)
@@ -255,6 +286,18 @@ type BlockChainIO interface {
 	// I think this is because of a problem with IsSynced() when using neutrino
 	// When that is fixed this can be removed
 	WaitForBackendToStart()
+
+	// Start initializes the backend, making any necessary connections,
+	// starting up required goroutines etc.
+	Start() error
+
+	// Stop signals the backend for shutdown. Shutdown may entail closing
+	// any active sockets, database handles, stopping goroutines, etc.
+	Stop()
+
+	ReturnPublishTransactionError(err error) error
+
+	GetBlockHeader(blockHash *chainhash.Hash) (*wire.BlockHeader, error)
 }
 
 // MessageSigner represents an abstract object capable of signing arbitrary
@@ -298,10 +341,6 @@ type WalletDriver struct {
 	// initialization flexibility, thereby accommodating several potential
 	// WalletController implementations.
 	New func(args ...interface{}) (WalletController, error)
-
-	// BackEnds returns a list of available chain service drivers for the
-	// wallet driver. This could be e.g. bitcoind, btcd, neutrino, etc.
-	BackEnds func() []string
 }
 
 var (

@@ -321,9 +321,9 @@ func createTestPeer(notifier chainntnfs.ChainNotifier,
 		bestHeight: fundingBroadcastHeight,
 	}
 	wallet := &lnwallet.LightningWallet{
-		WalletController: &mockWalletController{
-			rootKey:               aliceKeyPriv,
-			publishedTransactions: publTx,
+		WalletController: &lnwallet.MockWalletController{
+			RootKey:               aliceKeyPriv,
+			PublishedTransactions: publTx,
 		},
 	}
 	cc := &chainControl{

@@ -2,11 +2,8 @@ package chanbackup
 
 import (
 	"bytes"
-	"fmt"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"testing"
-
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/lightningnetwork/lnd/keychain"
 )
 
 var (
@@ -17,24 +14,6 @@ var (
 		0x93, 0xaf, 0x71, 0xdb, 0x18, 0x6d, 0x6e, 0x90,
 	}
 )
-
-type mockKeyRing struct {
-	fail bool
-}
-
-func (m *mockKeyRing) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.KeyDescriptor, error) {
-	return keychain.KeyDescriptor{}, nil
-}
-func (m *mockKeyRing) DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescriptor, error) {
-	if m.fail {
-		return keychain.KeyDescriptor{}, fmt.Errorf("fail")
-	}
-
-	_, pub := btcec.PrivKeyFromBytes(btcec.S256(), testWalletPrivKey)
-	return keychain.KeyDescriptor{
-		PubKey: pub,
-	}, nil
-}
 
 // TestEncryptDecryptPayload tests that given a static key, we're able to
 // properly decrypt and encrypted payload. We also test that we'll reject a
@@ -81,7 +60,7 @@ func TestEncryptDecryptPayload(t *testing.T) {
 		},
 	}
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	for i, payloadCase := range payloadCases {
 		var cipherBuffer bytes.Buffer
@@ -89,7 +68,7 @@ func TestEncryptDecryptPayload(t *testing.T) {
 		// First, we'll encrypt the passed payload with our scheme.
 		payloadReader := bytes.NewBuffer(payloadCase.plaintext)
 		err := encryptPayloadToWriter(
-			*payloadReader, &cipherBuffer, keyRing,
+			*payloadReader, &cipherBuffer, wallet,
 		)
 		if err != nil {
 			t.Fatalf("unable encrypt paylaod: %v", err)
@@ -107,7 +86,7 @@ func TestEncryptDecryptPayload(t *testing.T) {
 			cipherBuffer.Write(cipherText)
 		}
 
-		plaintext, err := decryptPayloadFromReader(&cipherBuffer, keyRing)
+		plaintext, err := decryptPayloadFromReader(&cipherBuffer, wallet)
 
 		switch {
 		// If this was meant to be a valid decryption, but we failed,
@@ -137,7 +116,7 @@ func TestInvalidKeyEncryption(t *testing.T) {
 	t.Parallel()
 
 	var b bytes.Buffer
-	err := encryptPayloadToWriter(b, &b, &mockKeyRing{true})
+	err := encryptPayloadToWriter(b, &b, &lnwallet.MockWalletController{Fail: true})
 	if err == nil {
 		t.Fatalf("expected error due to fail key gen")
 	}
@@ -149,7 +128,7 @@ func TestInvalidKeyDecrytion(t *testing.T) {
 	t.Parallel()
 
 	var b bytes.Buffer
-	_, err := decryptPayloadFromReader(&b, &mockKeyRing{true})
+	_, err := decryptPayloadFromReader(&b, &lnwallet.MockWalletController{Fail: true})
 	if err == nil {
 		t.Fatalf("expected error due to fail key gen")
 	}

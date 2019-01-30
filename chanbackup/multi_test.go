@@ -2,6 +2,7 @@ package chanbackup
 
 import (
 	"bytes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"net"
 	"testing"
 )
@@ -25,7 +26,7 @@ func TestMultiPackUnpack(t *testing.T) {
 		multi.StaticBackups = append(multi.StaticBackups, single)
 	}
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	versionTestCases := []struct {
 		// version is the pack/unpack version that we should use to
@@ -51,7 +52,7 @@ func TestMultiPackUnpack(t *testing.T) {
 		multi.Version = versionCase.version
 
 		var b bytes.Buffer
-		err := multi.PackToWriter(&b, keyRing)
+		err := multi.PackToWriter(&b, wallet)
 		switch {
 		// If this is a valid test case, and we failed, then we'll
 		// return an error.
@@ -70,7 +71,7 @@ func TestMultiPackUnpack(t *testing.T) {
 		// version, then we trigger an error.
 		if versionCase.valid {
 			var unpackedMulti Multi
-			err = unpackedMulti.UnpackFromReader(&b, keyRing)
+			err = unpackedMulti.UnpackFromReader(&b, wallet)
 			if err != nil {
 				t.Fatalf("#%v unable to unpack multi: %v",
 					i, err)
@@ -98,7 +99,7 @@ func TestMultiPackUnpack(t *testing.T) {
 				bytes.Repeat([]byte{99}, 20),
 			)
 			err := encryptPayloadToWriter(
-				*fakeRawMulti, &fakePackedMulti, keyRing,
+				*fakeRawMulti, &fakePackedMulti, wallet,
 			)
 			if err != nil {
 				t.Fatalf("unable to pack fake multi; %v", err)
@@ -107,7 +108,7 @@ func TestMultiPackUnpack(t *testing.T) {
 			// We should reject this fake multi as it contains an
 			// unknown version.
 			err = unpackedMulti.UnpackFromReader(
-				&fakePackedMulti, keyRing,
+				&fakePackedMulti, wallet,
 			)
 			if err == nil {
 				t.Fatalf("#%v unpack with unknown version "+
@@ -122,7 +123,7 @@ func TestMultiPackUnpack(t *testing.T) {
 func TestPackedMultiUnpack(t *testing.T) {
 	t.Parallel()
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	// First, we'll make a new unpacked multi with a random channel.
 	testChannel, err := genRandomOpenChannelShell()
@@ -136,13 +137,13 @@ func TestPackedMultiUnpack(t *testing.T) {
 
 	// Now that we have our multi, we'll pack it into a new buffer.
 	var b bytes.Buffer
-	if err := multi.PackToWriter(&b, keyRing); err != nil {
+	if err := multi.PackToWriter(&b, wallet); err != nil {
 		t.Fatalf("unable to pack multi: %v", err)
 	}
 
 	// We should be able to properly unpack this typed packed multi.
 	packedMulti := PackedMulti(b.Bytes())
-	unpackedMulti, err := packedMulti.Unpack(keyRing)
+	unpackedMulti, err := packedMulti.Unpack(wallet)
 	if err != nil {
 		t.Fatalf("unable to unpack multi: %v", err)
 	}

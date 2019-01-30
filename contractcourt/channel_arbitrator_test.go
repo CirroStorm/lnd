@@ -2,6 +2,7 @@ package contractcourt
 
 import (
 	"fmt"
+	"github.com/btcsuite/btcwallet/chain"
 	"sync"
 	"testing"
 	"time"
@@ -140,6 +141,33 @@ func (*mockChainIO) GetBlockHash(blockHeight int64) (*chainhash.Hash, error) {
 
 func (*mockChainIO) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) {
 	return nil, nil
+}
+
+func (b *mockChainIO) GetBackend() chain.Interface {
+	return nil
+}
+
+func (b *mockChainIO) GetBlockHeader(
+	blockHash *chainhash.Hash) (*wire.BlockHeader, error) {
+	return nil, nil
+}
+
+func (b *mockChainIO) ReturnPublishTransactionError(err error) error {
+	return nil
+}
+
+func (b *mockChainIO) Start() error {
+	return nil
+}
+
+func (b *mockChainIO) Stop() {
+}
+
+func (*mockChainIO) SupportsUnconfirmedTransactions() bool {
+	return true
+}
+
+func (*mockChainIO) WaitForBackendToStart() {
 }
 
 func createTestChannelArbitrator(log ArbitratorLog) (*ChannelArbitrator,

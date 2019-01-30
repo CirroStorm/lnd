@@ -2,7 +2,6 @@ package lnwallet
 
 import (
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/input"
@@ -25,11 +24,7 @@ type Config struct {
 	// counterparty's broadcasting revoked commitment states.
 	Notifier chainntnfs.ChainNotifier
 
-	// SecretKeyRing is used by the wallet during the funding workflow
-	// process to obtain keys to be used directly within contracts. Usage
-	// of this interface ensures that all key derivation is itself fully
-	// deterministic.
-	SecretKeyRing keychain.SecretKeyRing
+	CoinType uint32
 
 	// WalletController is the core wallet, all non Lightning Network
 	// specific interaction is proxied to the internal wallet.
@@ -47,7 +42,7 @@ type Config struct {
 
 	// ChainIO is an instance of the BlockChainIO interface. ChainIO is
 	// used to lookup the existence of outputs within the UTXO set.
-	ChainIO chain.Interface
+	ChainIO BlockChainIO
 
 	// DefaultConstraints is the set of default constraints that will be
 	// used for any incoming or outgoing channel reservation requests.

@@ -5,7 +5,7 @@ import (
 	bitcoinCfg "github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	bitcoinWire "github.com/btcsuite/btcd/wire"
-	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	litecoinCfg "github.com/ltcsuite/ltcd/chaincfg"
 	litecoinWire "github.com/ltcsuite/ltcd/wire"
 )
@@ -35,7 +35,7 @@ type litecoinNetParams struct {
 var bitcoinTestNetParams = bitcoinNetParams{
 	Params:   &bitcoinCfg.TestNet3Params,
 	rpcPort:  "18334",
-	CoinType: keychain.CoinTypeTestnet,
+	CoinType: lnwallet.CoinTypeTestnet,
 }
 
 // bitcoinMainNetParams contains parameters specific to the current Bitcoin
@@ -43,7 +43,7 @@ var bitcoinTestNetParams = bitcoinNetParams{
 var bitcoinMainNetParams = bitcoinNetParams{
 	Params:   &bitcoinCfg.MainNetParams,
 	rpcPort:  "8334",
-	CoinType: keychain.CoinTypeBitcoin,
+	CoinType: lnwallet.CoinTypeBitcoin,
 }
 
 // bitcoinSimNetParams contains parameters specific to the simulation test
@@ -51,7 +51,7 @@ var bitcoinMainNetParams = bitcoinNetParams{
 var bitcoinSimNetParams = bitcoinNetParams{
 	Params:   &bitcoinCfg.SimNetParams,
 	rpcPort:  "18556",
-	CoinType: keychain.CoinTypeTestnet,
+	CoinType: lnwallet.CoinTypeTestnet,
 }
 
 // litecoinTestNetParams contains parameters specific to the 4th version of the
@@ -59,7 +59,7 @@ var bitcoinSimNetParams = bitcoinNetParams{
 var litecoinTestNetParams = litecoinNetParams{
 	Params:   &litecoinCfg.TestNet4Params,
 	rpcPort:  "19334",
-	CoinType: keychain.CoinTypeTestnet,
+	CoinType: lnwallet.CoinTypeTestnet,
 }
 
 // litecoinMainNetParams contains the parameters specific to the current
@@ -67,14 +67,14 @@ var litecoinTestNetParams = litecoinNetParams{
 var litecoinMainNetParams = litecoinNetParams{
 	Params:   &litecoinCfg.MainNetParams,
 	rpcPort:  "9334",
-	CoinType: keychain.CoinTypeLitecoin,
+	CoinType: lnwallet.CoinTypeLitecoin,
 }
 
 // regTestNetParams contains parameters specific to a local regtest network.
 var regTestNetParams = bitcoinNetParams{
 	Params:   &bitcoinCfg.RegressionNetParams,
 	rpcPort:  "18334",
-	CoinType: keychain.CoinTypeTestnet,
+	CoinType: lnwallet.CoinTypeTestnet,
 }
 
 // applyLitecoinParams applies the relevant chain configuration parameters that

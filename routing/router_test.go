@@ -31,7 +31,7 @@ type testCtx struct {
 
 	aliases map[string]*btcec.PublicKey
 
-	chain *mockChain
+	chain *mockChainIO
 
 	chainView *mockChainView
 }

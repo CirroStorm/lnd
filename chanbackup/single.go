@@ -3,6 +3,7 @@ package chanbackup
 import (
 	"bytes"
 	"fmt"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"io"
 	"net"
 
@@ -186,7 +187,7 @@ func (s *Single) Serialize(w io.Writer) error {
 // the nonce as associated data such that we'll be able to package the two
 // together for storage. Before writing out the encrypted payload, we prepend
 // the nonce to the final blob.
-func (s *Single) PackToWriter(w io.Writer, keyRing keychain.KeyRing) error {
+func (s *Single) PackToWriter(w io.Writer, wallet lnwallet.WalletController) error {
 	// First, we'll serialize the SCB (StaticChannelBackup) into a
 	// temporary buffer so we can store it in a temporary place before we
 	// go to encrypt the entire thing.
@@ -198,7 +199,7 @@ func (s *Single) PackToWriter(w io.Writer, keyRing keychain.KeyRing) error {
 	// Finally, we'll encrypt the raw serialized SCB (using the nonce as
 	// associated data), and write out the ciphertext prepend with the
 	// nonce that we used to the passed io.Reader.
-	return encryptPayloadToWriter(rawBytes, w, keyRing)
+	return encryptPayloadToWriter(rawBytes, w, wallet)
 }
 
 // Deserialize attempts to read the raw plaintext serialized SCB from the
@@ -280,8 +281,8 @@ func (s *Single) Deserialize(r io.Reader) error {
 // for details w.r.t the encryption scheme used. If we're unable to decrypt the
 // payload for whatever reason (wrong key, wrong nonce, etc), then this method
 // will return an error.
-func (s *Single) UnpackFromReader(r io.Reader, keyRing keychain.KeyRing) error {
-	plaintext, err := decryptPayloadFromReader(r, keyRing)
+func (s *Single) UnpackFromReader(r io.Reader, wallet lnwallet.WalletController) error {
+	plaintext, err := decryptPayloadFromReader(r, wallet)
 	if err != nil {
 		return err
 	}
@@ -297,14 +298,14 @@ func (s *Single) UnpackFromReader(r io.Reader, keyRing keychain.KeyRing) error {
 // static channel backups. The passed keyRing should be backed by the users
 // root HD seed in order to ensure full determinism.
 func PackStaticChanBackups(backups []Single,
-	keyRing keychain.KeyRing) (map[wire.OutPoint][]byte, error) {
+	wallet lnwallet.WalletController) (map[wire.OutPoint][]byte, error) {
 
 	packedBackups := make(map[wire.OutPoint][]byte)
 	for _, chanBackup := range backups {
 		chanPoint := chanBackup.FundingOutpoint
 
 		var b bytes.Buffer
-		err := chanBackup.PackToWriter(&b, keyRing)
+		err := chanBackup.PackToWriter(&b, wallet)
 		if err != nil {
 			return nil, fmt.Errorf("unable to pack chan backup "+
 				"for %v: %v", chanPoint, err)
@@ -325,14 +326,14 @@ type PackedSingles [][]byte
 // each one into a new SCB struct. The passed keyRing should be backed by the
 // same HD seed as was used to encrypt the set of backups in the first place.
 // If we're unable to decrypt any of the back ups, then we'll return an error.
-func (p PackedSingles) Unpack(keyRing keychain.KeyRing) ([]Single, error) {
+func (p PackedSingles) Unpack(wallet lnwallet.WalletController) ([]Single, error) {
 
 	backups := make([]Single, len(p))
 	for i, encryptedBackup := range p {
 		var backup Single
 
 		backupReader := bytes.NewReader(encryptedBackup)
-		err := backup.UnpackFromReader(backupReader, keyRing)
+		err := backup.UnpackFromReader(backupReader, wallet)
 		if err != nil {
 			return nil, err
 		}

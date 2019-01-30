@@ -9,7 +9,6 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/lnwallet"
 
-	"github.com/btcsuite/btcwallet/chain"
 	"github.com/btcsuite/btcwallet/wallet"
 
 	// This is required to register bdb as a valid walletdb driver. In the
@@ -77,7 +76,7 @@ type Config struct {
 	// ChainSource is the primary chain interface. This is used to operate
 	// the wallet and do things such as rescanning, sending transactions,
 	// notifications for received funds, etc.
-	ChainSource chain.Interface
+	ChainSource lnwallet.BlockChainIO
 
 	// FeeEstimator is an instance of the fee estimator interface which
 	// will be used by the wallet to dynamically set transaction fees when

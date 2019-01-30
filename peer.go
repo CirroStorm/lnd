@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -1561,7 +1562,7 @@ func (p *peer) ChannelSnapshots() []*channeldb.ChannelSnapshot {
 // the case of a cooperative channel close negotiation.
 func (p *peer) genDeliveryScript() ([]byte, error) {
 	deliveryAddr, err := p.server.cc.wallet.NewAddress(
-		lnwallet.WitnessPubKey, false,
+		waddrmgr.KeyScopeBIP0084, false,
 	)
 	if err != nil {
 		return nil, err

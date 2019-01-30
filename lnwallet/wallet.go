@@ -3,15 +3,8 @@ package lnwallet
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
-	"net"
-	"sync"
-	"sync/atomic"
-	"time"
-
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -19,31 +12,24 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/shachain"
-	"github.com/btcsuite/btcwallet/chain"
-	"github.com/btcsuite/btcwallet/waddrmgr"
-	"github.com/lightninglabs/neutrino"
+	"math"
+	"net"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 const (
 	// The size of the buffered queue of requests to the wallet from the
 	// outside word.
 	msgBufferSize = 100
-)
-
-var (
-	// errOutputSpent is returned by the GetUtxo method if the target output
-	// for lookup has already been spent.
-	errOutputSpent = errors.New("target output has been spent")
-
-	// errOutputNotFound signals that the desired output could not be
-	// located.
-	errOutputNotFound = errors.New("target output was not found")
 )
 
 // ErrInsufficientFunds is a type matching the error interface which is
@@ -248,10 +234,9 @@ type LightningWallet struct {
 	// specific interaction is proxied to the internal wallet.
 	WalletController
 
-	// SecretKeyRing is the interface we'll use to derive any keys related
-	// to our purpose within the network including: multi-sig keys, node
-	// keys, revocation keys, etc.
-	keychain.SecretKeyRing
+	Chain BlockChainIO
+
+	CoinType uint32
 
 	// This mutex is to be held when generating external keys to be used as
 	// multi-sig, and commitment keys within the channel.
@@ -283,8 +268,6 @@ type LightningWallet struct {
 
 	wg sync.WaitGroup
 
-	chain chain.Interface
-
 	// TODO(roasbeef): handle wallet lock/unlock
 }
 
@@ -292,12 +275,12 @@ type LightningWallet struct {
 // If the wallet has never been created (according to the passed dataDir), first-time
 // setup is executed.
 func NewLightningWallet(Cfg Config) (*LightningWallet, error) {
-
+	// TODO try to remove the Cfg. parameters, they are already passed in with Cfg
 	return &LightningWallet{
 		Cfg:              Cfg,
-		SecretKeyRing:    Cfg.SecretKeyRing,
+		CoinType:         Cfg.CoinType,
 		WalletController: Cfg.WalletController,
-		chain:            Cfg.ChainIO,
+		Chain:            Cfg.ChainIO,
 		msgChan:          make(chan interface{}, msgBufferSize),
 		nextFundingID:    0,
 		fundingLimbo:     make(map[uint64]*ChannelReservation),
@@ -552,16 +535,7 @@ func (l *LightningWallet) handleFundingReserveRequest(req *InitFundingReserveMsg
 		req.resp <- nil
 		return
 	}
-	revocationRoot, err := l.DerivePrivKey(nextRevocationKeyDesc)
-	if err != nil {
-		req.err <- err
-		req.resp <- nil
-		return
-	}
-
-	// Once we have the root, we can then generate our shachain producer
-	// and from that generate the per-commitment point.
-	revRoot, err := chainhash.NewHash(revocationRoot.Serialize())
+	revRoot, err := l.GetRevocationRoot(nextRevocationKeyDesc)
 	if err != nil {
 		req.err <- err
 		req.resp <- nil
@@ -983,7 +957,7 @@ func (l *LightningWallet) handleFundingCounterPartySigs(msg *addCounterPartySigs
 			)
 			if err != nil {
 			}
-			output, err := l.GetUtxo(
+			output, err := l.Chain.GetUtxo(
 				&txin.PreviousOutPoint,
 				pkScript, 0,
 			)
@@ -1326,7 +1300,7 @@ func (l *LightningWallet) selectCoinsAndChange(feeRate SatPerKWeight,
 	// selection, but only if the addition of the output won't lead to the
 	// creation of dust.
 	if changeAmt != 0 && changeAmt > DefaultDustLimit() {
-		changeAddr, err := l.NewAddress(WitnessPubKey, true)
+		changeAddr, err := l.NewAddress(waddrmgr.KeyScopeBIP0084, true)
 		if err != nil {
 			return err
 		}
@@ -1416,14 +1390,14 @@ func coinSelect(feeRate SatPerKWeight, amt btcutil.Amount,
 		var weightEstimate input.TxWeightEstimator
 
 		for _, utxo := range selectedUtxos {
-			switch utxo.AddressType {
-			case WitnessPubKey:
+			switch utxo.KeyScope.String() {
+			case waddrmgr.KeyScopeBIP0084.String():
 				weightEstimate.AddP2WKHInput()
-			case NestedWitnessPubKey:
+			case waddrmgr.KeyScopeBIP0049Plus.String():
 				weightEstimate.AddNestedP2WKHInput()
 			default:
 				return nil, 0, fmt.Errorf("Unsupported address type: %v",
-					utxo.AddressType)
+					utxo.KeyScope.String())
 			}
 		}
 
@@ -1460,142 +1434,51 @@ func coinSelect(feeRate SatPerKWeight, amt btcutil.Amount,
 	}
 }
 
-// GetBestBlock returns the current height and hash of the best known block
-// within the main chain.
+// IsSynced returns a boolean indicating if from the PoV of the wallet,
+// it has fully synced to the current best block in the main chain.
 //
-// This method is a part of the lnwallet.BlockChainIO interface.
-func (b *LightningWallet) GetBestBlock() (*chainhash.Hash, int32, error) {
-	return b.chain.GetBestBlock()
-}
+// This is a part of the WalletController interface.
+func (l *LightningWallet) IsSynced() (bool, int64, error) {
+	b := l.Chain.GetBackend()
 
-// GetUtxo returns the original output referenced by the passed outpoint that
-// creates the target pkScript.
-//
-// This method is a part of the lnwallet.BlockChainIO interface.
-func (b *LightningWallet) GetUtxo(op *wire.OutPoint, pkScript []byte,
-	heightHint uint32) (*wire.TxOut, error) {
-
-	switch backend := b.chain.(type) {
-
-	case *chain.NeutrinoClient:
-		spendReport, err := backend.CS.GetUtxo(
-			neutrino.WatchInputs(neutrino.InputWithScript{
-				OutPoint: *op,
-				PkScript: pkScript,
-			}),
-			neutrino.StartBlock(&waddrmgr.BlockStamp{
-				Height: int32(heightHint),
-			}),
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		// If the spend report is nil, then the output was not found in
-		// the rescan.
-		if spendReport == nil {
-			return nil, errOutputNotFound
-		}
-
-		// If the spending transaction is populated in the spend report,
-		// this signals that the output has already been spent.
-		if spendReport.SpendingTx != nil {
-			return nil, errOutputSpent
-		}
-
-		// Otherwise, the output is assumed to be in the UTXO.
-		return spendReport.Output, nil
-
-	case *chain.RPCClient:
-		txout, err := backend.GetTxOut(&op.Hash, op.Index, false)
-		if err != nil {
-			return nil, err
-		} else if txout == nil {
-			return nil, errOutputSpent
-		}
-
-		pkScript, err := hex.DecodeString(txout.ScriptPubKey.Hex)
-		if err != nil {
-			return nil, err
-		}
-
-		// We'll ensure we properly convert the amount given in BTC to
-		// satoshis.
-		amt, err := btcutil.NewAmount(txout.Value)
-		if err != nil {
-			return nil, err
-		}
-
-		return &wire.TxOut{
-			Value:    int64(amt),
-			PkScript: pkScript,
-		}, nil
-
-	case *chain.BitcoindClient:
-		txout, err := backend.GetTxOut(&op.Hash, op.Index, false)
-		if err != nil {
-			return nil, err
-		} else if txout == nil {
-			return nil, errOutputSpent
-		}
-
-		pkScript, err := hex.DecodeString(txout.ScriptPubKey.Hex)
-		if err != nil {
-			return nil, err
-		}
-
-		// Sadly, gettxout returns the output value in BTC instead of
-		// satoshis.
-		amt, err := btcutil.NewAmount(txout.Value)
-		if err != nil {
-			return nil, err
-		}
-
-		return &wire.TxOut{
-			Value:    int64(amt),
-			PkScript: pkScript,
-		}, nil
-
-	default:
-		return nil, fmt.Errorf("unknown backend")
+	// Grab the best chain state the wallet is currently aware of.
+	myBestBlock, err := b.BlockStamp()
+	if err != nil {
+		return false, 0, err
 	}
-}
 
-// GetBlock returns a raw block from the server given its hash.
-//
-// This method is a part of the lnwallet.BlockChainIO interface.
-func (b *LightningWallet) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) {
-	return b.chain.GetBlock(blockHash)
-}
+	// We'll also extract the current best wallet timestamp so the caller
+	// can get an idea of where we are in the sync timeline.
+	myBestTimestamp := myBestBlock.Timestamp.Unix()
 
-// GetBlockHash returns the hash of the block in the best blockchain at the
-// given height.
-//
-// This method is a part of the lnwallet.BlockChainIO interface.
-func (b *LightningWallet) GetBlockHash(blockHeight int64) (*chainhash.Hash, error) {
-	return b.chain.GetBlockHash(blockHeight)
-}
-
-// SupportsUnconfirmedTransactions indicates if the backend supports unconfirmed
-// transactions
-//
-// This method is a part of the lnwallet.BlockChainIO interface.
-func (b *LightningWallet) SupportsUnconfirmedTransactions() bool {
-	switch b.chain.(type) {
-	case *chain.NeutrinoClient:
-		return false
-	default:
-		return true
+	// Next, query the chain backend to grab the info about the tip of the
+	// main chain.
+	chainBestHash, chainBestHeight, err := b.GetBestBlock()
+	if err != nil {
+		return false, 0, err
 	}
-}
 
-// Backend specific code to ensure the backend has started
-// This is currently only used for tests
-//
-// This method is a part of the lnwallet.BlockChainIO interface.
-func (b *LightningWallet) WaitForBackendToStart() {
-	switch b.chain.(type) {
-	case *chain.NeutrinoClient:
-		time.Sleep(time.Second)
+	// If the wallet hasn't yet fully synced to the node's best chain tip,
+	// then we're not yet fully synced.
+	if myBestBlock.Height < chainBestHeight {
+		return false, myBestTimestamp, nil
 	}
+
+	// If the wallet is on par with the current best chain tip, then we
+	// still may not yet be synced as the chain backend may still be
+	// catching up to the main chain. So we'll grab the block header in
+	// order to make a guess based on the current time stamp.
+	chainBestBlockHeader, err := b.GetBlockHeader(chainBestHash)
+	if err != nil {
+		return false, 0, err
+	}
+
+	// If the timestamp on the best header is more than 2 hours in the
+	// past, then we're not yet synced.
+	minus24Hours := time.Now().Add(-2 * time.Hour)
+	if chainBestBlockHeader.Timestamp.Before(minus24Hours) {
+		return false, myBestTimestamp, nil
+	}
+
+	return true, myBestTimestamp, nil
 }

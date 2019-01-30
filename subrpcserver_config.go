@@ -110,9 +110,6 @@ func (s *subRPCServerConfigs) PopulateDependencies(cc *chainControl,
 			subCfgValue.FieldByName("Wallet").Set(
 				reflect.ValueOf(cc.wallet),
 			)
-			subCfgValue.FieldByName("KeyRing").Set(
-				reflect.ValueOf(cc.keyRing),
-			)
 
 		case *autopilotrpc.Config:
 			subCfgValue := extractReflectValue(cfg)

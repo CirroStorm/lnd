@@ -2,13 +2,13 @@ package chanbackup
 
 import (
 	"bytes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"net"
 	"sync"
 	"sync/atomic"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/channeldb"
-	"github.com/lightningnetwork/lnd/keychain"
 )
 
 // Swapper is an interface that allows the chanbackup.SubSwapper to update the
@@ -90,7 +90,7 @@ type SubSwapper struct {
 
 	// keyRing is the main key ring that will allow us to pack the new
 	// multi backup.
-	keyRing keychain.KeyRing
+	wallet lnwallet.WalletController
 
 	Swapper
 
@@ -103,7 +103,7 @@ type SubSwapper struct {
 // updates, pack a multi backup, and swap the current best backup from its
 // storage location.
 func NewSubSwapper(startingChans []Single, chanNotifier ChannelNotifier,
-	keyRing keychain.KeyRing, backupSwapper Swapper) (*SubSwapper, error) {
+	wallet lnwallet.WalletController, backupSwapper Swapper) (*SubSwapper, error) {
 
 	// First, we'll subscribe to the latest set of channel updates given
 	// the set of channels we already know of.
@@ -126,7 +126,7 @@ func NewSubSwapper(startingChans []Single, chanNotifier ChannelNotifier,
 	return &SubSwapper{
 		backupState: backupState,
 		chanEvents:  chanEvents,
-		keyRing:     keyRing,
+		wallet:      wallet,
 		Swapper:     backupSwapper,
 		quit:        make(chan struct{}),
 	}, nil
@@ -217,7 +217,7 @@ func (s *SubSwapper) backupUpdater() {
 			// to pack (encrypt+encode) the new channel state to
 			// our target reader.
 			var b bytes.Buffer
-			err := newMulti.PackToWriter(&b, s.keyRing)
+			err := newMulti.PackToWriter(&b, s.wallet)
 			if err != nil {
 				log.Errorf("unable to pack multi backup: %v",
 					err)

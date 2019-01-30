@@ -3,9 +3,9 @@ package chanbackup
 import (
 	"bytes"
 	"fmt"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"io"
 
-	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
@@ -43,7 +43,7 @@ type Multi struct {
 // channel backups serialized, a series of serialized static channel backups
 // concatenated. To pack this payload, we then apply our chacha20 AEAD to the
 // entire payload, using the 24-byte nonce as associated data.
-func (m Multi) PackToWriter(w io.Writer, keyRing keychain.KeyRing) error {
+func (m Multi) PackToWriter(w io.Writer, wallet lnwallet.WalletController) error {
 	// The only version that we know how to pack atm is version 0. Attempts
 	// to pack any other version will result in an error.
 	switch m.Version {
@@ -84,17 +84,17 @@ func (m Multi) PackToWriter(w io.Writer, keyRing keychain.KeyRing) error {
 
 	// With the plaintext multi backup assembled, we'll now encrypt it
 	// directly to the passed writer.
-	return encryptPayloadToWriter(multiBackupBuffer, w, keyRing)
+	return encryptPayloadToWriter(multiBackupBuffer, w, wallet)
 }
 
 // UnpackFromReader attempts to unpack (decrypt+deserialize) a packed
 // multi-chan backup form the passed io.Reader. If we're unable to decrypt the
 // any portion of the multi-chan backup, an error will be returned.
-func (m *Multi) UnpackFromReader(r io.Reader, keyRing keychain.KeyRing) error {
+func (m *Multi) UnpackFromReader(r io.Reader, wallet lnwallet.WalletController) error {
 	// We'll attempt to read the entire packed backup, and also decrypt it
 	// using the passed key ring which is expected to be able to derive the
 	// encryption keys.
-	plaintextBackup, err := decryptPayloadFromReader(r, keyRing)
+	plaintextBackup, err := decryptPayloadFromReader(r, wallet)
 	if err != nil {
 		return err
 	}
@@ -162,11 +162,11 @@ type PackedMulti []byte
 // Unpack attempts to unpack (decrypt+desrialize) the target packed
 // multi-channel back up. If we're unable to fully unpack this back, then an
 // error will be returned.
-func (p *PackedMulti) Unpack(keyRing keychain.KeyRing) (*Multi, error) {
+func (p *PackedMulti) Unpack(wallet lnwallet.WalletController) (*Multi, error) {
 	var m Multi
 
 	packedReader := bytes.NewReader(*p)
-	if err := m.UnpackFromReader(packedReader, keyRing); err != nil {
+	if err := m.UnpackFromReader(packedReader, wallet); err != nil {
 		return nil, err
 	}
 

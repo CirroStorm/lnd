@@ -20,7 +20,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/htlcswitch"
@@ -203,14 +202,13 @@ func (n *testNode) AddNewChannel(channel *channeldb.OpenChannel,
 
 func createTestWallet(cdb *channeldb.DB, netParams *chaincfg.Params,
 	notifier chainntnfs.ChainNotifier, wc lnwallet.WalletController,
-	signer input.Signer, keyRing keychain.SecretKeyRing,
+	signer lnwallet.Signer,
 	bio lnwallet.BlockChainIO,
 	estimator lnwallet.FeeEstimator) (*lnwallet.LightningWallet, error) {
 
 	wallet, err := lnwallet.NewLightningWallet(lnwallet.Config{
 		Database:           cdb,
 		Notifier:           notifier,
-		SecretKeyRing:      keyRing,
 		WalletController:   wc,
 		Signer:             signer,
 		ChainIO:            bio,
@@ -246,8 +244,8 @@ func createTestFundingManager(t *testing.T, privKey *btcec.PrivateKey,
 	publTxChan := make(chan *wire.MsgTx, 1)
 	shutdownChan := make(chan struct{})
 
-	wc := &mockWalletController{
-		rootKey: alicePrivKey,
+	wc := &lnwallet.MockWalletController{
+		RootKey: alicePrivKey,
 	}
 	signer := &mockSigner{
 		key: alicePrivKey,
@@ -262,12 +260,8 @@ func createTestFundingManager(t *testing.T, privKey *btcec.PrivateKey,
 		return nil, err
 	}
 
-	keyRing := &mockSecretKeyRing{
-		rootKey: alicePrivKey,
-	}
-
 	lnw, err := createTestWallet(
-		cdb, netParams, chainNotifier, wc, signer, keyRing, bio,
+		cdb, netParams, chainNotifier, wc, signer, bio,
 		estimator,
 	)
 	if err != nil {

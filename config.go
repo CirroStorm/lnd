@@ -91,9 +91,10 @@ var (
 	defaultBitcoindDir  = btcutil.AppDataDir("bitcoin", false)
 	defaultLitecoindDir = btcutil.AppDataDir("litecoin", false)
 
-	defaultTorSOCKS   = net.JoinHostPort("localhost", strconv.Itoa(defaultTorSOCKSPort))
-	defaultTorDNS     = net.JoinHostPort(defaultTorDNSHost, strconv.Itoa(defaultTorDNSPort))
-	defaultTorControl = net.JoinHostPort("localhost", strconv.Itoa(defaultTorControlPort))
+	defaultTorSOCKS     = net.JoinHostPort("localhost", strconv.Itoa(defaultTorSOCKSPort))
+	defaultTorDNS       = net.JoinHostPort(defaultTorDNSHost, strconv.Itoa(defaultTorDNSPort))
+	defaultTorControl   = net.JoinHostPort("localhost", strconv.Itoa(defaultTorControlPort))
+	defaultWalletDriver = "btcwallet"
 )
 
 type chainConfig struct {
@@ -248,6 +249,8 @@ type config struct {
 	net tor.Net
 
 	Routing *routing.Conf `group:"routing" namespace:"routing"`
+
+	WalletDriver string `long:"walletdriver" description:"Which wallet driver to use"`
 }
 
 // loadConfig initializes and parses the config using a config file and command
@@ -327,7 +330,8 @@ func loadConfig() (*config, error) {
 			DNS:     defaultTorDNS,
 			Control: defaultTorControl,
 		},
-		net: &tor.ClearNet{},
+		net:          &tor.ClearNet{},
+		WalletDriver: defaultWalletDriver,
 	}
 
 	// Pre-parse the command line options to pick up an alternative config

@@ -702,22 +702,19 @@ func (r *rpcServer) ListUnspent(ctx context.Context,
 		// Translate lnwallet address type to the proper gRPC proto
 		// address type.
 		var addrType lnrpc.AddressType
-		switch utxo.AddressType {
+		switch utxo.KeyScope.String() {
 
-		case lnwallet.WitnessPubKey:
+		case waddrmgr.KeyScopeBIP0084.String():
 			addrType = lnrpc.AddressType_WITNESS_PUBKEY_HASH
 
-		case lnwallet.NestedWitnessPubKey:
+		case waddrmgr.KeyScopeBIP0049Plus.String():
 			addrType = lnrpc.AddressType_NESTED_PUBKEY_HASH
 
-		case lnwallet.UnknownAddressType:
+		default:
 			rpcsLog.Warnf("[listunspent] utxo with address of "+
 				"unknown type ignored: %v",
 				utxo.OutPoint.String())
 			continue
-
-		default:
-			return nil, fmt.Errorf("invalid utxo address type")
 		}
 
 		// Now that we know we have a proper mapping to an address,
@@ -932,15 +929,15 @@ func (r *rpcServer) NewAddress(ctx context.Context,
 
 	// Translate the gRPC proto address type to the wallet controller's
 	// available address types.
-	var addrType lnwallet.AddressType
+	var keyScope waddrmgr.KeyScope
 	switch in.Type {
 	case lnrpc.AddressType_WITNESS_PUBKEY_HASH:
-		addrType = lnwallet.WitnessPubKey
+		keyScope = waddrmgr.KeyScopeBIP0084
 	case lnrpc.AddressType_NESTED_PUBKEY_HASH:
-		addrType = lnwallet.NestedWitnessPubKey
+		keyScope = waddrmgr.KeyScopeBIP0049Plus
 	}
 
-	addr, err := r.server.cc.wallet.NewAddress(addrType, false)
+	addr, err := r.server.cc.wallet.NewAddress(keyScope, false)
 	if err != nil {
 		return nil, err
 	}

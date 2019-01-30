@@ -5,7 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/btcsuite/btcwallet/waddrmgr"
+	"github.com/lightningnetwork/lnd/lnwallet/chains"
+	"github.com/lightningnetwork/lnd/lnwallet/hwwallet"
+	"google.golang.org/grpc"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -171,11 +176,11 @@ func mineAndAssertTxInBlock(t *testing.T, miner *rpctest.Harness,
 
 // newPkScript generates a new public key script of the given address type.
 func newPkScript(t *testing.T, w *lnwallet.LightningWallet,
-	addrType lnwallet.AddressType) []byte {
+	keyScope waddrmgr.KeyScope) []byte {
 
 	t.Helper()
 
-	addr, err := w.NewAddress(addrType, false)
+	addr, err := w.NewAddress(keyScope, false)
 	if err != nil {
 		t.Fatalf("unable to create new address: %v", err)
 	}
@@ -221,7 +226,7 @@ func assertTxInWallet(t *testing.T, w *lnwallet.LightningWallet,
 
 	// If the backend is Neutrino, then we can't determine unconfirmed
 	// transactions since it's not aware of the mempool.
-	if !confirmed && !w.SupportsUnconfirmedTransactions() {
+	if !confirmed && !w.Chain.SupportsUnconfirmedTransactions() {
 		return
 	}
 
@@ -270,7 +275,7 @@ func calcStaticFee(numHTLCs int) btcutil.Amount {
 func loadTestCredits(miner *rpctest.Harness, w *lnwallet.LightningWallet,
 	numOutputs int, btcPerOutput float64) error {
 
-	w.WaitForBackendToStart()
+	w.Chain.WaitForBackendToStart()
 
 	// Using the mining node, spend from a coinbase output numOutputs to
 	// give us btcPerOutput with each output.
@@ -286,7 +291,7 @@ func loadTestCredits(miner *rpctest.Harness, w *lnwallet.LightningWallet,
 	addrs := make([]btcutil.Address, 0, numOutputs)
 	for i := 0; i < numOutputs; i++ {
 		// Grab a fresh address from the wallet to house this output.
-		walletAddr, err := w.NewAddress(lnwallet.WitnessPubKey, false)
+		walletAddr, err := w.NewAddress(waddrmgr.KeyScopeBIP0084, false)
 		if err != nil {
 			return err
 		}
@@ -349,8 +354,8 @@ func loadTestCredits(miner *rpctest.Harness, w *lnwallet.LightningWallet,
 // available for funding channels.
 func createTestWallet(tempTestDir string, miningNode *rpctest.Harness,
 	netParams *chaincfg.Params, notifier chainntnfs.ChainNotifier,
-	wc lnwallet.WalletController, keyRing keychain.SecretKeyRing,
-	signer lnwallet.Signer, bio chain.Interface) (*lnwallet.LightningWallet, error) {
+	wc lnwallet.WalletController,
+	bio lnwallet.BlockChainIO) (*lnwallet.LightningWallet, error) {
 
 	dbDir := filepath.Join(tempTestDir, "cdb")
 	cdb, err := channeldb.Open(dbDir)
@@ -361,9 +366,8 @@ func createTestWallet(tempTestDir string, miningNode *rpctest.Harness,
 	cfg := lnwallet.Config{
 		Database:         cdb,
 		Notifier:         notifier,
-		SecretKeyRing:    keyRing,
 		WalletController: wc,
-		Signer:           signer,
+		Signer:           wc.(lnwallet.Signer),
 		ChainIO:          bio,
 		FeeEstimator:     lnwallet.NewStaticFeeEstimator(2500, 0),
 		DefaultConstraints: channeldb.ChannelConstraints{
@@ -385,9 +389,11 @@ func createTestWallet(tempTestDir string, miningNode *rpctest.Harness,
 		return nil, err
 	}
 
-	// Load our test wallet with 20 outputs each holding 4BTC.
-	if err := loadTestCredits(miningNode, wallet, 20, 4); err != nil {
-		return nil, err
+	if miningNode != nil {
+		// Load our test wallet with 20 outputs each holding 4BTC.
+		if err := loadTestCredits(miningNode, wallet, 20, 4); err != nil {
+			return nil, err
+		}
 	}
 
 	return wallet, nil
@@ -1066,7 +1072,7 @@ func testListTransactionDetails(miner *rpctest.Harness,
 	const outputAmt = btcutil.SatoshiPerBitcoin
 	txids := make(map[chainhash.Hash]struct{})
 	for i := 0; i < numTxns; i++ {
-		addr, err := alice.NewAddress(lnwallet.WitnessPubKey, false)
+		addr, err := alice.NewAddress(waddrmgr.KeyScopeBIP0084, false)
 		if err != nil {
 			t.Fatalf("unable to create new address: %v", err)
 		}
@@ -1290,7 +1296,7 @@ func testTransactionSubscriptions(miner *rpctest.Harness,
 		numTxns   = 3
 	)
 	unconfirmedNtfns := make(chan struct{})
-	if alice.SupportsUnconfirmedTransactions() {
+	if alice.Chain.SupportsUnconfirmedTransactions() {
 		go func() {
 			for i := 0; i < numTxns; i++ {
 				txDetail := <-txClient.UnconfirmedTransactions()
@@ -1318,7 +1324,7 @@ func testTransactionSubscriptions(miner *rpctest.Harness,
 	// Next, fetch a fresh address from the wallet, create 3 new outputs
 	// with the pkScript.
 	for i := 0; i < numTxns; i++ {
-		addr, err := alice.NewAddress(lnwallet.WitnessPubKey, false)
+		addr, err := alice.NewAddress(waddrmgr.KeyScopeBIP0084, false)
 		if err != nil {
 			t.Fatalf("unable to create new address: %v", err)
 		}
@@ -1341,7 +1347,7 @@ func testTransactionSubscriptions(miner *rpctest.Harness,
 		}
 	}
 
-	if alice.SupportsUnconfirmedTransactions() {
+	if alice.Chain.SupportsUnconfirmedTransactions() {
 		// We should receive a notification for all three transactions
 		// generated above.
 		select {
@@ -1724,7 +1730,7 @@ func testPublishTransaction(r *rpctest.Harness,
 	// orphan, and will accept it. Should look into if this is
 	// the behavior also for bitcoind, and update test
 	// accordingly.
-	if alice.SupportsUnconfirmedTransactions() {
+	if alice.Chain.SupportsUnconfirmedTransactions() {
 		// Mine the tx spending tx3.
 		if err := mineAndAssert(tx4); err != nil {
 			t.Fatalf("unable to mine tx: %v", err)
@@ -2088,7 +2094,7 @@ func testChangeOutputSpendConfirmation(r *rpctest.Harness,
 	if err != nil {
 		t.Fatalf("unable to retrieve alice's balance: %v", err)
 	}
-	bobPkScript := newPkScript(t, bob, lnwallet.WitnessPubKey)
+	bobPkScript := newPkScript(t, bob, waddrmgr.KeyScopeBIP0084)
 
 	// We'll use a transaction fee of 13020 satoshis, which will allow us to
 	// sweep all of Alice's balance in one transaction containing 1 input
@@ -2119,7 +2125,7 @@ func testChangeOutputSpendConfirmation(r *rpctest.Harness,
 	}
 
 	// Now, we'll send an output back to Alice from Bob of 1 BTC.
-	alicePkScript := newPkScript(t, alice, lnwallet.WitnessPubKey)
+	alicePkScript := newPkScript(t, alice, waddrmgr.KeyScopeBIP0084)
 	output = &wire.TxOut{
 		Value:    btcutil.SatoshiPerBitcoin,
 		PkScript: alicePkScript,
@@ -2215,15 +2221,27 @@ var walletTests = []walletTestCase{
 	},
 }
 
-func clearWalletStates(a, b *lnwallet.LightningWallet) error {
+type keyringTestCase struct {
+	name string
+	test func(walletType string, wallet *lnwallet.LightningWallet,
+		test *testing.T)
+}
+
+var keyringTests = []keyringTestCase{
+	{
+		name: "key ring derivation",
+		test: testKeyRingDerivation,
+	},
+}
+
+func clearWalletStates(a *lnwallet.LightningWallet) error {
 	a.ResetReservations()
-	b.ResetReservations()
 
 	if err := a.Cfg.Database.Wipe(); err != nil {
 		return err
 	}
 
-	return b.Cfg.Database.Wipe()
+	return nil
 }
 
 func waitForMempoolTx(r *rpctest.Harness, txid *chainhash.Hash) error {
@@ -2345,6 +2363,7 @@ func TestLightningWallet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to create temp dir: %v", err)
 	}
+	defer os.RemoveAll(tempDir)
 	db, err := channeldb.Open(tempDir)
 	if err != nil {
 		t.Fatalf("unable to create db: %v", err)
@@ -2363,33 +2382,40 @@ func TestLightningWallet(t *testing.T) {
 		t.Fatalf("unable to start notifier: %v", err)
 	}
 
+	// We'll clamp the max range scan to constrain the run time of the
+	// private key scan test.
+	lnwallet.MaxKeyRangeScan = 3
+
 	for _, walletDriver := range lnwallet.RegisteredWallets() {
-		for _, backEnd := range walletDriver.BackEnds() {
-			if backEnd == "neutrino" {
-				runTests(t, walletDriver, backEnd, miningNode,
-					rpcConfig, chainNotifier)
+		//for _, backEnd := range chain.BackEnds() {
+		//	if backEnd == "neutrino" && walletDriver.WalletType == "btcwallet" {
+		//		runBackendTests(t, walletDriver, backEnd, miningNode,
+		//			rpcConfig, chainNotifier)
+		//	}
+		//}
+
+		coinTypes := []uint32{lnwallet.CoinTypeBitcoin, lnwallet.CoinTypeTestnet, lnwallet.CoinTypeLitecoin}
+		for _, coinType := range coinTypes {
+			for _, keyringTest := range keyringTests {
+				runKeyringTest(keyringTest, t, walletDriver, coinType, miningNode,
+					chainNotifier)
 			}
+
 		}
 	}
 }
 
-// runTests runs all of the tests for a single interface implementation and
+// runBackendTests runs all of the tests for a single interface implementation and
 // chain back-end combination. This makes it easier to use `defer` as well as
 // factoring out the test logic from the loop which cycles through the
 // interface implementations.
-func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
+func runBackendTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 	backEnd string, miningNode *rpctest.Harness,
 	rpcConfig rpcclient.ConnConfig,
 	chainNotifier *btcdnotify.BtcdNotifier) {
 
 	var (
-		bio chain.Interface
-
-		aliceSigner input.Signer
-		bobSigner   input.Signer
-
-		aliceKeyRing keychain.SecretKeyRing
-		bobKeyRing   keychain.SecretKeyRing
+		bio lnwallet.BlockChainIO
 
 		aliceWalletController lnwallet.WalletController
 		bobWalletController   lnwallet.WalletController
@@ -2397,19 +2423,23 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 		feeEstimator lnwallet.FeeEstimator
 	)
 
-	tempTestDirAlice, err := ioutil.TempDir("", "lnwallet")
+	testDir, err := ioutil.TempDir("", "runBackendTests")
 	if err != nil {
 		t.Fatalf("unable to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempTestDirAlice)
+	defer os.RemoveAll(testDir)
 
-	tempTestDirBob, err := ioutil.TempDir("", "lnwallet")
+	tempTestDirAlice, err := ioutil.TempDir(testDir, "lnwallet")
 	if err != nil {
 		t.Fatalf("unable to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempTestDirBob)
 
-	var aliceClient, bobClient chain.Interface
+	tempTestDirBob, err := ioutil.TempDir(testDir, "lnwallet")
+	if err != nil {
+		t.Fatalf("unable to create temp directory: %v", err)
+	}
+
+	var aliceClient, bobClient lnwallet.BlockChainIO
 	switch backEnd {
 	case "btcd":
 		feeEstimator, err = lnwallet.NewBtcdFeeEstimator(
@@ -2418,18 +2448,20 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 			t.Fatalf("unable to create btcd fee estimator: %v",
 				err)
 		}
-		aliceClient, err = chain.NewRPCClient(netParams,
+		aliceRPC, err := chain.NewRPCClient(netParams,
 			rpcConfig.Host, rpcConfig.User, rpcConfig.Pass,
 			rpcConfig.Certificates, false, 20)
 		if err != nil {
 			t.Fatalf("unable to make chain rpc: %v", err)
 		}
-		bobClient, err = chain.NewRPCClient(netParams,
+		aliceClient = chains.NewBtcdChain(aliceRPC)
+		bobRPC, err := chain.NewRPCClient(netParams,
 			rpcConfig.Host, rpcConfig.User, rpcConfig.Pass,
 			rpcConfig.Certificates, false, 20)
 		if err != nil {
 			t.Fatalf("unable to make chain rpc: %v", err)
 		}
+		bobClient = chains.NewBtcdChain(bobRPC)
 
 	case "neutrino":
 		feeEstimator = lnwallet.NewStaticFeeEstimator(62500, 0)
@@ -2463,9 +2495,8 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 		}
 		aliceChain.Start()
 		defer aliceChain.Stop()
-		aliceClient = chain.NewNeutrinoClient(
-			netParams, aliceChain,
-		)
+		aliceClient = chains.NewNeutrinoChain(chain.NewNeutrinoClient(
+			netParams, aliceChain))
 
 		// Start Bob - open a database, start a neutrino
 		// instance, and initialize a btcwallet driver for it.
@@ -2490,9 +2521,8 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 		}
 		bobChain.Start()
 		defer bobChain.Stop()
-		bobClient = chain.NewNeutrinoClient(
-			netParams, bobChain,
-		)
+		bobClient = chains.NewNeutrinoChain(chain.NewNeutrinoClient(
+			netParams, bobChain))
 
 	case "bitcoind":
 		feeEstimator, err = lnwallet.NewBitcoindFeeEstimator(
@@ -2502,13 +2532,12 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 				err)
 		}
 		// Start a bitcoind instance.
-		tempBitcoindDir, err := ioutil.TempDir("", "bitcoind")
+		tempBitcoindDir, err := ioutil.TempDir(testDir, "bitcoind")
 		if err != nil {
 			t.Fatalf("unable to create temp directory: %v", err)
 		}
 		zmqBlockHost := "ipc:///" + tempBitcoindDir + "/blocks.socket"
 		zmqTxHost := "ipc:///" + tempBitcoindDir + "/tx.socket"
-		defer os.RemoveAll(tempBitcoindDir)
 		rpcPort := rand.Int()%(65536-1024) + 1024
 		bitcoind := exec.Command(
 			"bitcoind",
@@ -2551,8 +2580,8 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 
 		// Create a btcwallet bitcoind client for both Alice and
 		// Bob.
-		aliceClient = chainConn.NewBitcoindClient()
-		bobClient = chainConn.NewBitcoindClient()
+		aliceClient = chains.NewBitcoindChain(chainConn.NewBitcoindClient())
+		bobClient = chains.NewBitcoindChain(chainConn.NewBitcoindClient())
 	default:
 		t.Fatalf("unknown chain driver: %v", backEnd)
 	}
@@ -2572,17 +2601,12 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 			NetParams:    netParams,
 			ChainSource:  aliceClient,
 			FeeEstimator: feeEstimator,
-			CoinType:     keychain.CoinTypeTestnet,
+			CoinType:     lnwallet.CoinTypeTestnet,
 		}
 		aliceWalletController, err = walletDriver.New(aliceWalletConfig)
 		if err != nil {
 			t.Fatalf("unable to create btcwallet: %v", err)
 		}
-		aliceSigner = aliceWalletController.(*btcwallet.BtcWallet)
-		aliceKeyRing = keychain.NewBtcWalletKeyRing(
-			aliceWalletController.(*btcwallet.BtcWallet).InternalWallet(),
-			keychain.CoinTypeTestnet,
-		)
 
 		bobSeed := sha256.New()
 		bobSeed.Write([]byte(backEnd))
@@ -2596,60 +2620,43 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 			NetParams:    netParams,
 			ChainSource:  bobClient,
 			FeeEstimator: feeEstimator,
-			CoinType:     keychain.CoinTypeTestnet,
+			CoinType:     lnwallet.CoinTypeTestnet,
 		}
 		bobWalletController, err = walletDriver.New(bobWalletConfig)
 		if err != nil {
 			t.Fatalf("unable to create btcwallet: %v", err)
 		}
-		bobSigner = bobWalletController.(*btcwallet.BtcWallet)
-		bobKeyRing = keychain.NewBtcWalletKeyRing(
-			bobWalletController.(*btcwallet.BtcWallet).InternalWallet(),
-			keychain.CoinTypeTestnet,
-		)
 		bio = bobClient
+
 	case "hwwallet":
 		//// start up mock hw wallet rpc server
-		//var aliceSeed = sha256.New()
-		//aliceSeed.Write([]byte(backEnd))
-		//aliceSeed.Write(aliceHDSeed[:])
-		//aliceSeedBytes := aliceSeed.Sum(nil)
-		//
-		//var aliceWalletConfig = &hwwallet.Config{
-		//	HdSeed:       aliceSeedBytes,
-		//	FeeEstimator: feeEstimator,
-		//	CoinType:     keychain.CoinTypeTestnet,
-		//}
-		//aliceWalletController, err = walletDriver.New(aliceWalletConfig)
-		//if err != nil {
-		//	t.Fatalf("unable to create hwwallet: %v", err)
-		//}
-		//aliceSigner = aliceWalletController.(*hwwallet.HwWallet)
-		////aliceKeyRing = keychain.NewBtcWalletKeyRing(
-		////	aliceWalletController.(*hwwallet.HwWallet).InternalWallet(),
-		////	keychain.CoinTypeTestnet,
-		////)
-		//
-		//bobSeed := sha256.New()
-		//bobSeed.Write([]byte(backEnd))
-		//bobSeed.Write(bobHDSeed[:])
-		//bobSeedBytes := bobSeed.Sum(nil)
-		//
-		//bobWalletConfig := &hwwallet.Config{
-		//	HdSeed:       bobSeedBytes,
-		//	FeeEstimator: feeEstimator,
-		//	CoinType:     keychain.CoinTypeTestnet,
-		//}
-		//bobWalletController, err = walletDriver.New(bobWalletConfig)
-		//if err != nil {
-		//	t.Fatalf("unable to create hwwallet: %v", err)
-		//}
-		//bobSigner = bobWalletController.(*hwwallet.HwWallet)
-		////bobKeyRing = keychain.NewBtcWalletKeyRing(
-		////	bobWalletController.(*hwwallet.HwWallet).InternalWallet(),
-		////	keychain.CoinTypeTestnet,
-		////)
-		//bio = bobWalletController.(*hwwallet.HwWallet)
+		var aliceGrpcServer *grpc.Server
+		aliceGrpcServer, aliceWalletController, err = createTestHWWallet(
+			"tpubDAenfwNu5GyCJWv8oqRAckdKMSUoZjgVF5p8WvQwHQeXjDhAHmGrPa4a4y2Fn7HF2nfCLefJanHV3ny1UY25MRVogizB2zRUdAo7Tr9XAjm",
+			"127.0.0.1:4242",
+			feeEstimator,
+			tempTestDirAlice,
+			walletDriver,
+			lnwallet.CoinTypeTestnet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer aliceGrpcServer.Stop()
+
+		var bobGrpcServer *grpc.Server
+		bobGrpcServer, bobWalletController, err = createTestHWWallet(
+			"tpubDABDwQshyZnhAs3Goiy6uzjQqwUuyFe42oeyvVUxKiY7vza4fNh7dsZ1Tj9BAe2FupgqiY8z3cSfFoTtTggJriu7aTbDDdPVUGrukgxNTTE",
+			"127.0.0.1:4243",
+			feeEstimator,
+			tempTestDirBob,
+			walletDriver,
+			lnwallet.CoinTypeTestnet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer bobGrpcServer.Stop()
+
+		bio = bobClient
 
 	default:
 		t.Fatalf("unknown wallet driver: %v", walletType)
@@ -2658,8 +2665,8 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 	// Funding via 20 outputs with 4BTC each.
 	alice, err := createTestWallet(
 		tempTestDirAlice, miningNode, netParams,
-		chainNotifier, aliceWalletController, aliceKeyRing,
-		aliceSigner, bio,
+		chainNotifier, aliceWalletController,
+		bio,
 	)
 	if err != nil {
 		t.Fatalf("unable to create test ln wallet: %v", err)
@@ -2668,8 +2675,8 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 
 	bob, err := createTestWallet(
 		tempTestDirBob, miningNode, netParams,
-		chainNotifier, bobWalletController, bobKeyRing,
-		bobSigner, bio,
+		chainNotifier, bobWalletController,
+		bio,
 	)
 	if err != nil {
 		t.Fatalf("unable to create test ln wallet: %v", err)
@@ -2696,9 +2703,269 @@ func runTests(t *testing.T, walletDriver *lnwallet.WalletDriver,
 		// TODO(roasbeef): possible reset mining
 		// node's chainstate to initial level, cleanly
 		// wipe buckets
-		if err := clearWalletStates(alice, bob); err !=
+		if err := clearWalletStates(alice); err !=
+			nil && err != bbolt.ErrBucketNotFound {
+			t.Fatalf("unable to wipe wallet state: %v", err)
+		}
+		if err := clearWalletStates(bob); err !=
 			nil && err != bbolt.ErrBucketNotFound {
 			t.Fatalf("unable to wipe wallet state: %v", err)
 		}
 	}
+}
+
+func createTestHWWallet(xpub string, address string, feeEstimator lnwallet.FeeEstimator, tempTestDir string, walletDriver *lnwallet.WalletDriver, coinType uint32) (*grpc.Server, lnwallet.WalletController, error) {
+	lis, err := net.Listen("tcp", address)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	grpcServer := grpc.NewServer()
+	hwwallet.RegisterHwWalletServer(grpcServer, &hwwallet.MockHwWalletServer{xpub})
+	go grpcServer.Serve(lis)
+
+	var aliceWalletConfig = &hwwallet.Config{
+		FeeEstimator:  feeEstimator,
+		CoinType:      coinType,
+		NetParams:     netParams,
+		DataDir:       tempTestDir,
+		RemoteAddress: address,
+	}
+	aliceWalletController, err := walletDriver.New(aliceWalletConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	return grpcServer, aliceWalletController, err
+}
+
+// runKeyringTest runs all of the tests for a single interface implementation and
+// coin type combination. This makes it easier to use `defer` as well as
+// factoring out the test logic from the loop which cycles through the
+// coin types.
+func runKeyringTest(keyringTest keyringTestCase, t *testing.T, walletDriver *lnwallet.WalletDriver,
+	coinType uint32, miningNode *rpctest.Harness,
+	chainNotifier *btcdnotify.BtcdNotifier) {
+
+	var (
+		bio lnwallet.BlockChainIO
+
+		aliceWalletController lnwallet.WalletController
+
+		feeEstimator lnwallet.FeeEstimator
+	)
+
+	testDir, err := ioutil.TempDir("", "runKeyringTests")
+	if err != nil {
+		t.Fatalf("unable to create temp directory: %v", err)
+	}
+
+	tempTestDirAlice, err := ioutil.TempDir(testDir, "lnwallet")
+	if err != nil {
+		t.Fatalf("unable to create temp directory: %v", err)
+	}
+
+	// we don't really use a backend but we need one to create the wallet
+	// we'll just use neutrino
+	feeEstimator = lnwallet.NewStaticFeeEstimator(62500, 0)
+
+	// Set some package-level variable to speed up
+	// operation for tests.
+	neutrino.BanDuration = time.Millisecond * 100
+	neutrino.QueryTimeout = time.Millisecond * 500
+	neutrino.QueryNumRetries = 1
+
+	// Start Alice - open a database, start a neutrino
+	// instance, and initialize a btcwallet driver for it.
+	aliceDB, err := walletdb.Create("bdb",
+		tempTestDirAlice+"/neutrino.db")
+	if err != nil {
+		t.Fatalf("unable to create DB: %v", err)
+	}
+	defer aliceDB.Close()
+	aliceChain, err := neutrino.NewChainService(
+		neutrino.Config{
+			DataDir:     tempTestDirAlice,
+			Database:    aliceDB,
+			ChainParams: *netParams,
+			ConnectPeers: []string{
+				miningNode.P2PAddress(),
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("unable to make neutrino: %v", err)
+	}
+	aliceChain.Start()
+	defer aliceChain.Stop()
+	aliceClient := chains.NewNeutrinoChain(chain.NewNeutrinoClient(
+		netParams, aliceChain,
+	))
+
+	walletType := walletDriver.WalletType
+	switch walletType {
+	case "btcwallet":
+		var aliceSeed = sha256.New()
+		aliceSeed.Write([]byte("neutrino"))
+		aliceSeed.Write(aliceHDSeed[:])
+		aliceSeedBytes := aliceSeed.Sum(nil)
+
+		aliceWalletConfig := &btcwallet.Config{
+			PrivatePass:  []byte("alice-pass"),
+			HdSeed:       aliceSeedBytes,
+			DataDir:      tempTestDirAlice,
+			NetParams:    netParams,
+			ChainSource:  aliceClient,
+			FeeEstimator: feeEstimator,
+			CoinType:     coinType,
+		}
+		aliceWalletController, err = walletDriver.New(aliceWalletConfig)
+		if err != nil {
+			t.Fatalf("unable to create btcwallet: %v", err)
+		}
+
+	case "hwwallet":
+		//// start up mock hw wallet rpc server
+		var aliceGrpcServer *grpc.Server
+		aliceGrpcServer, aliceWalletController, err = createTestHWWallet(
+			"tpubDAenfwNu5GyCJWv8oqRAckdKMSUoZjgVF5p8WvQwHQeXjDhAHmGrPa4a4y2Fn7HF2nfCLefJanHV3ny1UY25MRVogizB2zRUdAo7Tr9XAjm",
+			"127.0.0.1:4242",
+			feeEstimator,
+			tempTestDirAlice,
+			walletDriver,
+			coinType)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer aliceGrpcServer.Stop()
+
+	default:
+		t.Fatalf("unknown wallet driver: %v", walletType)
+	}
+
+	// Funding via 20 outputs with 4BTC each.
+	alice, err := createTestWallet(
+		tempTestDirAlice, nil, netParams,
+		chainNotifier, aliceWalletController,
+		bio,
+	)
+	if err != nil {
+		t.Fatalf("unable to create test ln wallet: %v", err)
+	}
+	defer alice.Shutdown()
+
+	testName := fmt.Sprintf("%v/%v:%v", walletType, coinType,
+		keyringTest.name)
+	t.Run(testName, func(t *testing.T) {
+		keyringTest.test(walletType, alice, t)
+	})
+}
+
+// versionZeroKeyFamilies is a slice of all the known key families for first
+// version of the key derivation schema defined in this package.
+var versionZeroKeyFamilies = []keychain.KeyFamily{
+	keychain.KeyFamilyMultiSig,
+	keychain.KeyFamilyRevocationBase,
+	keychain.KeyFamilyHtlcBase,
+	keychain.KeyFamilyPaymentBase,
+	keychain.KeyFamilyDelayBase,
+	keychain.KeyFamilyRevocationRoot,
+	keychain.KeyFamilyNodeKey,
+}
+
+func assertEqualKeyLocator(t *testing.T, a, b keychain.KeyLocator) {
+	t.Helper()
+	if a != b {
+		t.Fatalf("mismatched key locators: expected %v, "+
+			"got %v", spew.Sdump(a), spew.Sdump(b))
+	}
+}
+
+// TestKeyRingDerivation tests that each known KeyRing implementation properly
+// adheres to the expected behavior of the set of interfaces.
+func testKeyRingDerivation(walletName string, wallet *lnwallet.LightningWallet, t *testing.T) {
+	const numKeysToDerive = 10
+
+	t.Run(fmt.Sprintf("%v", walletName), func(t *testing.T) {
+		// First, we'll ensure that we're able to derive keys
+		// from each of the known key families.
+		for _, keyFam := range versionZeroKeyFamilies {
+			// First, we'll ensure that we can derive the
+			// *next* key in the keychain.
+			keyDesc, err := wallet.DeriveNextKey(keyFam)
+			if err != nil {
+				t.Fatalf("unable to derive next for "+
+					"keyFam=%v: %v", keyFam, err)
+			}
+			assertEqualKeyLocator(t,
+				keychain.KeyLocator{
+					Family: keyFam,
+					Index:  0,
+				}, keyDesc.KeyLocator,
+			)
+
+			// We'll now re-derive that key to ensure that
+			// we're able to properly access the key via
+			// the random access derivation methods.
+			keyLoc := keychain.KeyLocator{
+				Family: keyFam,
+				Index:  0,
+			}
+			firstKeyDesc, err := wallet.DeriveKey(keyLoc)
+			if err != nil {
+				t.Fatalf("unable to derive first key for "+
+					"keyFam=%v: %v", keyFam, err)
+			}
+			if !keyDesc.PubKey.IsEqual(firstKeyDesc.PubKey) {
+				t.Fatalf("mismatched keys: expected %x, "+
+					"got %x",
+					keyDesc.PubKey.SerializeCompressed(),
+					firstKeyDesc.PubKey.SerializeCompressed())
+			}
+			assertEqualKeyLocator(t,
+				keychain.KeyLocator{
+					Family: keyFam,
+					Index:  0,
+				}, firstKeyDesc.KeyLocator,
+			)
+
+			// If we now try to manually derive the next 10
+			// keys (including the original key), then we
+			// should get an identical public key back and
+			// their KeyLocator information
+			// should be set properly.
+			for i := 0; i < numKeysToDerive+1; i++ {
+				keyLoc := keychain.KeyLocator{
+					Family: keyFam,
+					Index:  uint32(i),
+				}
+				keyDesc, err := wallet.DeriveKey(keyLoc)
+				if err != nil {
+					t.Fatalf("unable to derive first key for "+
+						"keyFam=%v: %v", keyFam, err)
+				}
+
+				// Ensure that the key locator matches
+				// up as well.
+				assertEqualKeyLocator(
+					t, keyLoc, keyDesc.KeyLocator,
+				)
+			}
+
+			// If this succeeds, then we'll also try to
+			// derive a random index within the range.
+			randKeyIndex := uint32(rand.Int31())
+			keyLoc = keychain.KeyLocator{
+				Family: keyFam,
+				Index:  randKeyIndex,
+			}
+			keyDesc, err = wallet.DeriveKey(keyLoc)
+			if err != nil {
+				t.Fatalf("unable to derive key_index=%v "+
+					"for keyFam=%v: %v",
+					randKeyIndex, keyFam, err)
+			}
+			assertEqualKeyLocator(
+				t, keyLoc, keyDesc.KeyLocator,
+			)
+		}
+	})
 }

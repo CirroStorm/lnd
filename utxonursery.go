@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -1227,7 +1228,7 @@ func (u *utxoNursery) closeAndRemoveIfMature(chanPoint *wire.OutPoint) error {
 // Specifically, the script generated is a version 0, pay-to-witness-pubkey-hash
 // (p2wkh) output.
 func newSweepPkScript(wallet lnwallet.WalletController) ([]byte, error) {
-	sweepAddr, err := wallet.NewAddress(lnwallet.WitnessPubKey, false)
+	sweepAddr, err := wallet.NewAddress(waddrmgr.KeyScopeBIP0084, false)
 	if err != nil {
 		return nil, err
 	}

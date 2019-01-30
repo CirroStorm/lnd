@@ -2,6 +2,7 @@ package chanbackup
 
 import (
 	"bytes"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"math"
 	"math/rand"
 	"net"
@@ -148,7 +149,7 @@ func TestSinglePackUnpack(t *testing.T) {
 	singleChanBackup := NewSingle(channel, []net.Addr{addr1, addr2})
 	singleChanBackup.RemoteNodePub.Curve = nil
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	versionTestCases := []struct {
 		// version is the pack/unpack version that we should use to
@@ -177,7 +178,7 @@ func TestSinglePackUnpack(t *testing.T) {
 
 		var b bytes.Buffer
 
-		err := singleChanBackup.PackToWriter(&b, keyRing)
+		err := singleChanBackup.PackToWriter(&b, wallet)
 		switch {
 		// If this is a valid test case, and we failed, then we'll
 		// return an error.
@@ -196,7 +197,7 @@ func TestSinglePackUnpack(t *testing.T) {
 		// version, then we trigger an error.
 		if versionCase.valid {
 			var unpackedSingle Single
-			err = unpackedSingle.UnpackFromReader(&b, keyRing)
+			err = unpackedSingle.UnpackFromReader(&b, wallet)
 			if err != nil {
 				t.Fatalf("#%v unable to unpack single: %v",
 					i, err)
@@ -232,7 +233,7 @@ func TestSinglePackUnpack(t *testing.T) {
 func TestPackedSinglesUnpack(t *testing.T) {
 	t.Parallel()
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	// To start, we'll create 10 new singles, and them assemble their
 	// packed forms into a slice.
@@ -248,7 +249,7 @@ func TestPackedSinglesUnpack(t *testing.T) {
 		single := NewSingle(channel, nil)
 
 		var b bytes.Buffer
-		if err := single.PackToWriter(&b, keyRing); err != nil {
+		if err := single.PackToWriter(&b, wallet); err != nil {
 			t.Fatalf("unable to pack single: %v", err)
 		}
 
@@ -258,7 +259,7 @@ func TestPackedSinglesUnpack(t *testing.T) {
 
 	// With all singles packed, we'll create the grouped type and attempt
 	// to Unpack all of them in a single go.
-	freshSingles, err := PackedSingles(packedSingles).Unpack(keyRing)
+	freshSingles, err := PackedSingles(packedSingles).Unpack(wallet)
 	if err != nil {
 		t.Fatalf("unable to unpack singles: %v", err)
 	}
@@ -272,7 +273,7 @@ func TestPackedSinglesUnpack(t *testing.T) {
 	// If we mutate one of the packed singles, then the entire method
 	// should fail.
 	packedSingles[0][0] ^= 1
-	_, err = PackedSingles(packedSingles).Unpack(keyRing)
+	_, err = PackedSingles(packedSingles).Unpack(wallet)
 	if err == nil {
 		t.Fatalf("unpack attempt should fail")
 	}
@@ -283,7 +284,7 @@ func TestPackedSinglesUnpack(t *testing.T) {
 func TestSinglePackStaticChanBackups(t *testing.T) {
 	t.Parallel()
 
-	keyRing := &mockKeyRing{}
+	wallet := &lnwallet.MockWalletController{}
 
 	// First, we'll create a set of random single, and along the way,
 	// create a map that will let us look up each single by its chan point.
@@ -304,7 +305,7 @@ func TestSinglePackStaticChanBackups(t *testing.T) {
 
 	// Now that we have all of our singles are created, we'll attempt to
 	// pack them all in a single batch.
-	packedSingleMap, err := PackStaticChanBackups(unpackedSingles, keyRing)
+	packedSingleMap, err := PackStaticChanBackups(unpackedSingles, wallet)
 	if err != nil {
 		t.Fatalf("unable to pack backups: %v", err)
 	}
@@ -320,7 +321,7 @@ func TestSinglePackStaticChanBackups(t *testing.T) {
 
 		var freshSingle Single
 		err := freshSingle.UnpackFromReader(
-			bytes.NewReader(packedSingles), keyRing,
+			bytes.NewReader(packedSingles), wallet,
 		)
 		if err != nil {
 			t.Fatalf("unable to unpack single: %v", err)
@@ -332,7 +333,7 @@ func TestSinglePackStaticChanBackups(t *testing.T) {
 	// If we attempt to pack again, but force the key ring to fail, then
 	// the entire method should fail.
 	_, err = PackStaticChanBackups(
-		unpackedSingles, &mockKeyRing{true},
+		unpackedSingles, &lnwallet.MockWalletController{Fail: true},
 	)
 	if err == nil {
 		t.Fatalf("pack attempt should fail")

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"testing"
 	"time"
 
@@ -330,8 +331,8 @@ func (tc *testContext) extractFundingInput() (*Utxo, *wire.TxOut, error) {
 	}
 
 	block1Utxo := Utxo{
-		AddressType: WitnessPubKey,
-		Value:       btcutil.Amount(txout.Value),
+		KeyScope: waddrmgr.KeyScopeBIP0084,
+		Value:    btcutil.Amount(txout.Value),
 		OutPoint: wire.OutPoint{
 			Hash:  *tx.Hash(),
 			Index: 0,

@@ -2,19 +2,18 @@ package btcwallet
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"math"
-	"strings"
 	"sync"
-	"time"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/btcsuite/btcwallet/chain"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	base "github.com/btcsuite/btcwallet/wallet"
 	"github.com/btcsuite/btcwallet/walletdb"
@@ -29,12 +28,12 @@ const (
 var (
 	// waddrmgrNamespaceKey is the namespace key that the waddrmgr state is
 	// stored within the top-level waleltdb buckets of btcwallet.
-	waddrmgrNamespaceKey = []byte("waddrmgr")
+	WaddrmgrNamespaceKey = []byte("waddrmgr")
 
 	// lightningAddrSchema is the scope addr schema for all keys that we
 	// derive. We'll treat them all as p2wkh addresses, as atm we must
 	// specify a particular type.
-	lightningAddrSchema = waddrmgr.ScopeAddrSchema{
+	LightningAddrSchema = waddrmgr.ScopeAddrSchema{
 		ExternalAddrType: waddrmgr.WitnessPubKey,
 		InternalAddrType: waddrmgr.WitnessPubKey,
 	}
@@ -48,7 +47,7 @@ type BtcWallet struct {
 	// wallet is an active instance of btcwallet.
 	wallet *base.Wallet
 
-	chain chain.Interface
+	chain lnwallet.BlockChainIO
 
 	db walletdb.DB
 
@@ -57,6 +56,10 @@ type BtcWallet struct {
 	netParams *chaincfg.Params
 
 	chainKeyScope waddrmgr.KeyScope
+
+	// lightningScope is a pointer to the scope that we'll be using as a
+	// sub key manager to derive all the keys that we require.
+	lightningScope *waddrmgr.ScopedKeyManager
 
 	// utxoCache is a cache used to speed up repeated calls to
 	// FetchInputInfo.
@@ -131,17 +134,6 @@ func New(cfg Config) (*BtcWallet, error) {
 	}, nil
 }
 
-// BackEnd returns the underlying ChainService's name as a string.
-//
-// This is a part of the WalletController interface.
-func (b *BtcWallet) BackEnd() string {
-	if b.chain != nil {
-		return b.chain.BackEnd()
-	}
-
-	return ""
-}
-
 // InternalWallet returns a pointer to the internal base wallet which is the
 // core of btcwallet.
 func (b *BtcWallet) InternalWallet() *base.Wallet {
@@ -166,10 +158,10 @@ func (b *BtcWallet) Start() error {
 		// loaded by default if it was), then we'll manually create the
 		// scope for the first time ourselves.
 		err := walletdb.Update(b.db, func(tx walletdb.ReadWriteTx) error {
-			addrmgrNs := tx.ReadWriteBucket(waddrmgrNamespaceKey)
+			addrmgrNs := tx.ReadWriteBucket(WaddrmgrNamespaceKey)
 
 			_, err := b.wallet.Manager.NewScopedKeyManager(
-				addrmgrNs, b.chainKeyScope, lightningAddrSchema,
+				addrmgrNs, b.chainKeyScope, LightningAddrSchema,
 			)
 			return err
 		})
@@ -189,7 +181,7 @@ func (b *BtcWallet) Start() error {
 
 	// Pass the rpc client into the wallet so it can sync up to the
 	// current main chain.
-	b.wallet.SynchronizeRPC(b.chain)
+	b.wallet.SynchronizeRPC(b.chain.GetBackend())
 
 	return nil
 }
@@ -235,18 +227,7 @@ func (b *BtcWallet) ConfirmedBalance(confs int32) (btcutil.Amount, error) {
 // returned.
 //
 // This is a part of the WalletController interface.
-func (b *BtcWallet) NewAddress(t lnwallet.AddressType, change bool) (btcutil.Address, error) {
-	var keyScope waddrmgr.KeyScope
-
-	switch t {
-	case lnwallet.WitnessPubKey:
-		keyScope = waddrmgr.KeyScopeBIP0084
-	case lnwallet.NestedWitnessPubKey:
-		keyScope = waddrmgr.KeyScopeBIP0049Plus
-	default:
-		return nil, fmt.Errorf("unknown address type")
-	}
-
+func (b *BtcWallet) NewAddress(keyScope waddrmgr.KeyScope, change bool) (btcutil.Address, error) {
 	if change {
 		return b.wallet.NewChangeAddress(defaultAccount, keyScope)
 	}
@@ -316,19 +297,17 @@ func (b *BtcWallet) ListUnspentWitness(minConfs, maxConfs int32) (
 			return nil, err
 		}
 
-		var addressType lnwallet.AddressType
+		var keyScope *waddrmgr.KeyScope
 		if txscript.IsPayToWitnessPubKeyHash(pkScript) {
-			addressType = lnwallet.WitnessPubKey
+			keyScope = &waddrmgr.KeyScopeBIP0084
 		} else if txscript.IsPayToScriptHash(pkScript) {
 			// TODO(roasbeef): This assumes all p2sh outputs returned by the
 			// wallet are nested p2pkh. We can't check the redeem script because
 			// the btcwallet service does not include it.
-			addressType = lnwallet.NestedWitnessPubKey
+			keyScope = &waddrmgr.KeyScopeBIP0049Plus
 		}
 
-		if addressType == lnwallet.WitnessPubKey ||
-			addressType == lnwallet.NestedWitnessPubKey {
-
+		if keyScope != nil {
 			txid, err := chainhash.NewHashFromStr(output.TxID)
 			if err != nil {
 				return nil, err
@@ -342,9 +321,9 @@ func (b *BtcWallet) ListUnspentWitness(minConfs, maxConfs int32) (
 			}
 
 			utxo := &lnwallet.Utxo{
-				AddressType: addressType,
-				Value:       amt,
-				PkScript:    pkScript,
+				KeyScope: *keyScope,
+				Value:    amt,
+				PkScript: pkScript,
 				OutPoint: wire.OutPoint{
 					Hash:  *txid,
 					Index: output.Vout,
@@ -367,84 +346,7 @@ func (b *BtcWallet) ListUnspentWitness(minConfs, maxConfs int32) (
 // will be returned.
 func (b *BtcWallet) PublishTransaction(tx *wire.MsgTx) error {
 	if err := b.wallet.PublishTransaction(tx); err != nil {
-		switch b.chain.(type) {
-		case *chain.RPCClient:
-			if strings.Contains(err.Error(), "already have") {
-				// Transaction was already in the mempool, do
-				// not treat as an error. We do this to mimic
-				// the behaviour of bitcoind, which will not
-				// return an error if a transaction in the
-				// mempool is sent again using the
-				// sendrawtransaction RPC call.
-				return nil
-			}
-			if strings.Contains(err.Error(), "already exists") {
-				// Transaction was already mined, we don't
-				// consider this an error.
-				return nil
-			}
-			if strings.Contains(err.Error(), "already spent") {
-				// Output was already spent.
-				return lnwallet.ErrDoubleSpend
-			}
-			if strings.Contains(err.Error(), "already been spent") {
-				// Output was already spent.
-				return lnwallet.ErrDoubleSpend
-			}
-			if strings.Contains(err.Error(), "orphan transaction") {
-				// Transaction is spending either output that
-				// is missing or already spent.
-				return lnwallet.ErrDoubleSpend
-			}
-
-		case *chain.BitcoindClient:
-			if strings.Contains(err.Error(), "txn-already-in-mempool") {
-				// Transaction in mempool, treat as non-error.
-				return nil
-			}
-			if strings.Contains(err.Error(), "txn-already-known") {
-				// Transaction in mempool, treat as non-error.
-				return nil
-			}
-			if strings.Contains(err.Error(), "already in block") {
-				// Transaction was already mined, we don't
-				// consider this an error.
-				return nil
-			}
-			if strings.Contains(err.Error(), "txn-mempool-conflict") {
-				// Output was spent by other transaction
-				// already in the mempool.
-				return lnwallet.ErrDoubleSpend
-			}
-			if strings.Contains(err.Error(), "insufficient fee") {
-				// RBF enabled transaction did not have enough fee.
-				return lnwallet.ErrDoubleSpend
-			}
-			if strings.Contains(err.Error(), "Missing inputs") {
-				// Transaction is spending either output that
-				// is missing or already spent.
-				return lnwallet.ErrDoubleSpend
-			}
-
-		case *chain.NeutrinoClient:
-			if strings.Contains(err.Error(), "already have") {
-				// Transaction was already in the mempool, do
-				// not treat as an error.
-				return nil
-			}
-			if strings.Contains(err.Error(), "already exists") {
-				// Transaction was already mined, we don't
-				// consider this an error.
-				return nil
-			}
-			if strings.Contains(err.Error(), "already spent") {
-				// Output was already spent.
-				return lnwallet.ErrDoubleSpend
-			}
-
-		default:
-		}
-		return err
+		return b.chain.ReturnPublishTransactionError(err)
 	}
 	return nil
 }
@@ -710,46 +612,331 @@ func (b *BtcWallet) SubscribeTransactions() (lnwallet.TransactionSubscription, e
 	return txClient, nil
 }
 
-// IsSynced returns a boolean indicating if from the PoV of the wallet,
-// it has fully synced to the current best block in the main chain.
+// keyScope attempts to return the key scope that we'll use to derive all of
+// our keys. If the scope has already been fetched from the database, then a
+// cached version will be returned. Otherwise, we'll fetch it from the database
+// and cache it for subsequent accesses.
+func (b *BtcWallet) keyScope() (*waddrmgr.ScopedKeyManager, error) {
+	// If the scope has already been populated, then we'll return it
+	// directly.
+	if b.lightningScope != nil {
+		return b.lightningScope, nil
+	}
+
+	// Otherwise, we'll first do a check to ensure that the root manager
+	// isn't locked, as otherwise we won't be able to *use* the scope.
+	if b.wallet.Manager.IsLocked() {
+		return nil, fmt.Errorf("cannot create BtcWalletKeyRing with " +
+			"locked waddrmgr.Manager")
+	}
+
+	// If the manager is indeed unlocked, then we'll fetch the scope, cache
+	// it, and return to the caller.
+	lnScope, err := b.wallet.Manager.FetchScopedKeyManager(b.chainKeyScope)
+	if err != nil {
+		return nil, err
+	}
+
+	b.lightningScope = lnScope
+
+	return lnScope, nil
+}
+
+// createAccountIfNotExists will create the corresponding account for a key
+// family if it doesn't already exist in the database.
+func (b *BtcWallet) createAccountIfNotExists(
+	addrmgrNs walletdb.ReadWriteBucket, keyFam keychain.KeyFamily,
+	scope *waddrmgr.ScopedKeyManager) error {
+
+	// If this is the multi-sig key family, then we can return early as
+	// this is the default account that's created.
+	if keyFam == keychain.KeyFamilyMultiSig {
+		return nil
+	}
+
+	// Otherwise, we'll check if the account already exists, if so, we can
+	// once again bail early.
+	_, err := scope.AccountName(addrmgrNs, uint32(keyFam))
+	if err == nil {
+		return nil
+	}
+
+	// If we reach this point, then the account hasn't yet been created, so
+	// we'll need to create it before we can proceed.
+	return scope.NewRawAccount(addrmgrNs, uint32(keyFam))
+}
+
+// DeriveNextKey attempts to derive the *next* key within the key family
+// (account in BIP43) specified. This method should return the next external
+// child within this branch.
 //
-// This is a part of the WalletController interface.
-func (b *BtcWallet) IsSynced() (bool, int64, error) {
-	// Grab the best chain state the wallet is currently aware of.
-	syncState := b.wallet.Manager.SyncedTo()
+// NOTE: This is part of the keychain.KeyRing interface.
+func (b *BtcWallet) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.KeyDescriptor, error) {
+	var (
+		pubKey *btcec.PublicKey
+		keyLoc keychain.KeyLocator
+	)
 
-	// We'll also extract the current best wallet timestamp so the caller
-	// can get an idea of where we are in the sync timeline.
-	bestTimestamp := syncState.Timestamp.Unix()
+	db := b.wallet.Database()
+	err := walletdb.Update(db, func(tx walletdb.ReadWriteTx) error {
+		addrmgrNs := tx.ReadWriteBucket(WaddrmgrNamespaceKey)
 
-	// Next, query the chain backend to grab the info about the tip of the
-	// main chain.
-	bestHash, bestHeight, err := b.cfg.ChainSource.GetBestBlock()
+		scope, err := b.keyScope()
+		if err != nil {
+			return err
+		}
+
+		// If the account doesn't exist, then we may need to create it
+		// for the first time in order to derive the keys that we
+		// require.
+		err = b.createAccountIfNotExists(addrmgrNs, keyFam, scope)
+		if err != nil {
+			return err
+		}
+
+		addrs, err := scope.NextExternalAddresses(
+			addrmgrNs, uint32(keyFam), 1,
+		)
+		if err != nil {
+			return err
+		}
+
+		// Extract the first address, ensuring that it is of the proper
+		// interface type, otherwise we can't manipulate it below.
+		addr, ok := addrs[0].(waddrmgr.ManagedPubKeyAddress)
+		if !ok {
+			return fmt.Errorf("address is not a managed pubkey " +
+				"addr")
+		}
+
+		pubKey = addr.PubKey()
+
+		_, pathInfo, _ := addr.DerivationInfo()
+		keyLoc = keychain.KeyLocator{
+			Family: keyFam,
+			Index:  pathInfo.Index,
+		}
+
+		return nil
+	})
 	if err != nil {
-		return false, 0, err
+		return keychain.KeyDescriptor{}, err
 	}
 
-	// If the wallet hasn't yet fully synced to the node's best chain tip,
-	// then we're not yet fully synced.
-	if syncState.Height < bestHeight || !b.wallet.ChainSynced() {
-		return false, bestTimestamp, nil
-	}
+	return keychain.KeyDescriptor{
+		PubKey:     pubKey,
+		KeyLocator: keyLoc,
+	}, nil
+}
 
-	// If the wallet is on par with the current best chain tip, then we
-	// still may not yet be synced as the chain backend may still be
-	// catching up to the main chain. So we'll grab the block header in
-	// order to make a guess based on the current time stamp.
-	blockHeader, err := b.cfg.ChainSource.GetBlockHeader(bestHash)
+// DeriveKey attempts to derive an arbitrary key specified by the passed
+// KeyLocator. This may be used in several recovery scenarios, or when manually
+// rotating something like our current default node key.
+//
+// NOTE: This is part of the keychain.KeyRing interface.
+func (b *BtcWallet) DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescriptor, error) {
+	var keyDesc keychain.KeyDescriptor
+
+	db := b.wallet.Database()
+	err := walletdb.Update(db, func(tx walletdb.ReadWriteTx) error {
+		addrmgrNs := tx.ReadWriteBucket(WaddrmgrNamespaceKey)
+
+		scope, err := b.keyScope()
+		if err != nil {
+			return err
+		}
+
+		// If the account doesn't exist, then we may need to create it
+		// for the first time in order to derive the keys that we
+		// require.
+		err = b.createAccountIfNotExists(addrmgrNs, keyLoc.Family, scope)
+		if err != nil {
+			return err
+		}
+
+		path := waddrmgr.DerivationPath{
+			Account: uint32(keyLoc.Family),
+			Branch:  0,
+			Index:   uint32(keyLoc.Index),
+		}
+		addr, err := scope.DeriveFromKeyPath(addrmgrNs, path)
+		if err != nil {
+			return err
+		}
+
+		keyDesc.KeyLocator = keyLoc
+		keyDesc.PubKey = addr.(waddrmgr.ManagedPubKeyAddress).PubKey()
+
+		return nil
+	})
 	if err != nil {
-		return false, 0, err
+		return keyDesc, err
 	}
 
-	// If the timestamp on the best header is more than 2 hours in the
-	// past, then we're not yet synced.
-	minus24Hours := time.Now().Add(-2 * time.Hour)
-	if blockHeader.Timestamp.Before(minus24Hours) {
-		return false, bestTimestamp, nil
+	return keyDesc, nil
+}
+
+// derivePrivKey attempts to derive the private key that corresponds to the
+// passed key descriptor.
+//
+// NOTE: This is part of the keychain.SecretKeyRing interface.
+func (b *BtcWallet) derivePrivKey(keyDesc keychain.KeyDescriptor) (*btcec.PrivateKey, error) {
+	var key *btcec.PrivateKey
+
+	db := b.wallet.Database()
+	err := walletdb.Update(db, func(tx walletdb.ReadWriteTx) error {
+		addrmgrNs := tx.ReadWriteBucket(WaddrmgrNamespaceKey)
+
+		scope, err := b.keyScope()
+		if err != nil {
+			return err
+		}
+
+		// If the account doesn't exist, then we may need to create it
+		// for the first time in order to derive the keys that we
+		// require.
+		err = b.createAccountIfNotExists(
+			addrmgrNs, keyDesc.Family, scope,
+		)
+		if err != nil {
+			return err
+		}
+
+		// If the public key isn't set or they have a non-zero index,
+		// then we know that the caller instead knows the derivation
+		// path for a key.
+		if keyDesc.PubKey == nil || keyDesc.Index > 0 {
+			// Now that we know the account exists, we can safely
+			// derive the full private key from the given path.
+			path := waddrmgr.DerivationPath{
+				Account: uint32(keyDesc.Family),
+				Branch:  0,
+				Index:   uint32(keyDesc.Index),
+			}
+			addr, err := scope.DeriveFromKeyPath(addrmgrNs, path)
+			if err != nil {
+				return err
+			}
+
+			key, err = addr.(waddrmgr.ManagedPubKeyAddress).PrivKey()
+			if err != nil {
+				return err
+			}
+
+			return nil
+		}
+
+		// If the public key isn't nil, then this indicates that we
+		// need to scan for the private key, assuming that we know the
+		// valid key family.
+		nextPath := waddrmgr.DerivationPath{
+			Account: uint32(keyDesc.Family),
+			Branch:  0,
+			Index:   0,
+		}
+
+		// We'll now iterate through our key range in an attempt to
+		// find the target public key.
+		//
+		// TODO(roasbeef): possibly move scanning into wallet to allow
+		// to be parallelized
+		for i := 0; i < lnwallet.MaxKeyRangeScan; i++ {
+			// Derive the next key in the range and fetch its
+			// managed address.
+			addr, err := scope.DeriveFromKeyPath(
+				addrmgrNs, nextPath,
+			)
+			if err != nil {
+				return err
+			}
+			managedAddr := addr.(waddrmgr.ManagedPubKeyAddress)
+
+			// If this is the target public key, then we'll return
+			// it directly back to the caller.
+			if managedAddr.PubKey().IsEqual(keyDesc.PubKey) {
+				key, err = managedAddr.PrivKey()
+				if err != nil {
+					return err
+				}
+
+				return nil
+			}
+
+			// This wasn't the target key, so roll forward and try
+			// the next one.
+			nextPath.Index++
+		}
+
+		// If we reach this point, then we we're unable to derive the
+		// private key, so return an error back to the user.
+		return lnwallet.ErrCannotDerivePrivKey
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	return true, bestTimestamp, nil
+	return key, nil
+}
+
+// NewBtcWalletKeyRing creates a new implementation of the
+// keychain.SecretKeyRing interface backed by btcwallet.
+//
+// NOTE: The passed waddrmgr.Manager MUST be unlocked in order for the keychain
+// to function.
+//func NewBtcWalletKeyRing(w *wallet.Wallet, coinType uint32) SecretKeyRing {
+//	// Construct the key scope that will be used within the waddrmgr to
+//	// create an HD chain for deriving all of our required keys. A different
+//	// scope is used for each specific coin type.
+//	chainKeyScope := waddrmgr.KeyScope{
+//		Purpose: keychain.BIP0043Purpose,
+//		Coin:    coinType,
+//	}
+//
+//	return &BtcWalletKeyRing{
+//		wallet:        w,
+//		chainKeyScope: chainKeyScope,
+//	}
+//}
+
+func (b *BtcWallet) GetRevocationRoot(nextRevocationKeyDesc keychain.KeyDescriptor) (*chainhash.Hash, error) {
+	revocationRoot, err := b.derivePrivKey(nextRevocationKeyDesc)
+	if err != nil {
+		return nil, err
+	}
+
+	// Once we have the root, we can then generate our shachain producer
+	// and from that generate the per-commitment point.
+	return chainhash.NewHash(revocationRoot.Serialize())
+}
+
+func (b *BtcWallet) GetNodeKey() (*btcec.PrivateKey, error) {
+	key, err := b.derivePrivKey(keychain.KeyDescriptor{
+		KeyLocator: keychain.KeyLocator{
+			Family: keychain.KeyFamilyNodeKey,
+			Index:  0,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return key, nil
+}
+
+type PrivateKey struct {
+	privateKey *btcec.PrivateKey
+}
+
+func (b *PrivateKey) ECDH(pubKey *btcec.PublicKey) ([]byte, error) {
+	s := &btcec.PublicKey{}
+	x, y := btcec.S256().ScalarMult(pubKey.X, pubKey.Y, b.privateKey.D.Bytes())
+	s.X = x
+	s.Y = y
+
+	h := sha256.Sum256(s.SerializeCompressed())
+	return h[:], nil
+}
+
+func (b *PrivateKey) PubKey() *btcec.PublicKey {
+	return b.privateKey.PubKey()
 }
