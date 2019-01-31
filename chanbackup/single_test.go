@@ -149,7 +149,7 @@ func TestSinglePackUnpack(t *testing.T) {
 	singleChanBackup := NewSingle(channel, []net.Addr{addr1, addr2})
 	singleChanBackup.RemoteNodePub.Curve = nil
 
-	wallet := &lnwallet.MockWalletController{}
+	wallet := lnwallet.NewMockWalletController(nil)
 
 	versionTestCases := []struct {
 		// version is the pack/unpack version that we should use to
@@ -233,7 +233,7 @@ func TestSinglePackUnpack(t *testing.T) {
 func TestPackedSinglesUnpack(t *testing.T) {
 	t.Parallel()
 
-	wallet := &lnwallet.MockWalletController{}
+	wallet := lnwallet.NewMockWalletController(nil)
 
 	// To start, we'll create 10 new singles, and them assemble their
 	// packed forms into a slice.
@@ -284,7 +284,7 @@ func TestPackedSinglesUnpack(t *testing.T) {
 func TestSinglePackStaticChanBackups(t *testing.T) {
 	t.Parallel()
 
-	wallet := &lnwallet.MockWalletController{}
+	wallet := lnwallet.NewMockWalletController(nil)
 
 	// First, we'll create a set of random single, and along the way,
 	// create a map that will let us look up each single by its chan point.
@@ -332,8 +332,10 @@ func TestSinglePackStaticChanBackups(t *testing.T) {
 
 	// If we attempt to pack again, but force the key ring to fail, then
 	// the entire method should fail.
+	wc := lnwallet.NewMockWalletController(nil)
+	wc.DeriveKeyFail = true
 	_, err = PackStaticChanBackups(
-		unpackedSingles, &lnwallet.MockWalletController{Fail: true},
+		unpackedSingles, wc,
 	)
 	if err == nil {
 		t.Fatalf("pack attempt should fail")

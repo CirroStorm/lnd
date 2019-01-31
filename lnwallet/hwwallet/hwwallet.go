@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/tyler-smith/go-bip32"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -99,27 +99,6 @@ func (b *HwWallet) Stop() error {
 	return b.clientConn.Close()
 }
 
-// ConfirmedBalance returns the sum of all the wallet's unspent outputs that
-// have at least confs confirmations. If confs is set to zero, then all unspent
-// outputs, including those currently in the mempool will be included in the
-// final sum.
-//
-// This is a part of the WalletController interface.
-func (b *HwWallet) ConfirmedBalance(confs int32) (btcutil.Amount, error) {
-	var balance btcutil.Amount
-
-	witnessOutputs, err := b.ListUnspentWitness(confs, math.MaxInt32)
-	if err != nil {
-		return 0, err
-	}
-
-	for _, witnessOutput := range witnessOutputs {
-		balance += witnessOutput.Value
-	}
-
-	return balance, nil
-}
-
 // NewAddress returns the next external or internal address for the wallet
 // dictated by the value of the `change` parameter. If change is true, then an
 // internal address will be returned, otherwise an external address should be
@@ -189,86 +168,14 @@ func (b *HwWallet) UnlockOutpoint(o wire.OutPoint) {
 	panic(fmt.Sprintf("%s", runtime.FuncForPC(pc).Name()))
 }
 
-// ListUnspentWitness returns a slice of all the unspent outputs the wallet
+// ListUnspent returns a slice of all the unspent outputs the wallet
 // controls which pay to witness programs either directly or indirectly.
 //
 // This is a part of the WalletController interface.
-func (b *HwWallet) ListUnspentWitness(minConfs, maxConfs int32) (
-	[]*lnwallet.Utxo, error) {
-
-	//b.client.ComputeInputScript(context.Background(), )
-	//	var addresses map[string]struct{}
-	//	if cmd.Addresses != nil {
-	//		addresses = make(map[string]struct{})
-	//		// confirm that all of them are good:
-	//		for _, as := range *cmd.Addresses {
-	//			a, err := decodeAddress(as, w.ChainParams())
-	//			if err != nil {
-	//				return nil, err
-	//			}
-	//			addresses[a.EncodeAddress()] = struct{}{}
-	//		}
-	//	}
-	//
-	//	return w.ListUnspent(int32(*cmd.MinConf), int32(*cmd.MaxConf), addresses)
-	//}
-	// First, grab all the unfiltered currently unspent outputs.
-	//unspentOutputs, err := b.wallet.ListUnspent(minConfs, maxConfs, nil)
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	// Next, we'll run through all the regular outputs, only saving those
-	// which are p2wkh outputs or a p2wsh output nested within a p2sh output.
-	//witnessOutputs := make([]*lnwallet.Utxo, 0, len(unspentOutputs))
-	//for _, output := range unspentOutputs {
-	//	pkScript, err := hex.DecodeString(output.ScriptPubKey)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	var addressType lnwallet.AddressType
-	//	if txscript.IsPayToWitnessPubKeyHash(pkScript) {
-	//		addressType = lnwallet.WitnessPubKey
-	//	} else if txscript.IsPayToScriptHash(pkScript) {
-	//		// TODO(roasbeef): This assumes all p2sh outputs returned by the
-	//		// wallet are nested p2pkh. We can't check the redeem script because
-	//		// the btcwallet service does not include it.
-	//		addressType = lnwallet.NestedWitnessPubKey
-	//	}
-	//
-	//	if addressType == lnwallet.WitnessPubKey ||
-	//		addressType == lnwallet.NestedWitnessPubKey {
-	//
-	//		txid, err := chainhash.NewHashFromStr(output.TxID)
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//
-	//		// We'll ensure we properly convert the amount given in
-	//		// BTC to satoshis.
-	//		amt, err := btcutil.NewAmount(output.Amount)
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//
-	//		utxo := &lnwallet.Utxo{
-	//			AddressType: addressType,
-	//			Value:       amt,
-	//			PkScript:    pkScript,
-	//			OutPoint: wire.OutPoint{
-	//				Hash:  *txid,
-	//				Index: output.Vout,
-	//			},
-	//			Confirmations: output.Confirmations,
-	//		}
-	//		witnessOutputs = append(witnessOutputs, utxo)
-	//	}
-	//
-	//}
-	//
-	//return witnessOutputs, nil
-	return nil, nil
+func (b *HwWallet) ListUnspent(minConfs, maxConfs int32) ([]*btcjson.ListUnspentResult, error) {
+	// TODO call rpc
+	pc, _, _, _ := runtime.Caller(1)
+	panic(fmt.Sprintf("%s", runtime.FuncForPC(pc).Name()))
 }
 
 // PublishTransaction performs cursory validation (dust checks, etc), then

@@ -64,7 +64,7 @@ func (m *mockChannelNotifier) SubscribeChans(chans map[wire.OutPoint]struct{}) (
 func TestNewSubSwapperSubscribeFail(t *testing.T) {
 	t.Parallel()
 
-	wallet := &lnwallet.MockWalletController{}
+	wallet := lnwallet.NewMockWalletController(nil)
 
 	var swapper mockSwapper
 	chanNotifier := mockChannelNotifier{
@@ -129,7 +129,7 @@ func assertExpectedBackupSwap(t *testing.T, swapper *mockSwapper,
 func TestSubSwapperIdempotentStartStop(t *testing.T) {
 	t.Parallel()
 
-	wallet := &lnwallet.MockWalletController{}
+	wallet := lnwallet.NewMockWalletController(nil)
 
 	var (
 		swapper      mockSwapper
@@ -154,7 +154,7 @@ func TestSubSwapperIdempotentStartStop(t *testing.T) {
 func TestSubSwapperUpdater(t *testing.T) {
 	t.Parallel()
 
-	wallet := &lnwallet.MockWalletController{}
+	wallet := lnwallet.NewMockWalletController(nil)
 	chanNotifier := newMockChannelNotifier()
 	swapper := newMockSwapper()
 

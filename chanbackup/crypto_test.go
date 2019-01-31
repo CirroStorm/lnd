@@ -60,7 +60,7 @@ func TestEncryptDecryptPayload(t *testing.T) {
 		},
 	}
 
-	wallet := &lnwallet.MockWalletController{}
+	wallet := lnwallet.NewMockWalletController(nil)
 
 	for i, payloadCase := range payloadCases {
 		var cipherBuffer bytes.Buffer
@@ -116,7 +116,9 @@ func TestInvalidKeyEncryption(t *testing.T) {
 	t.Parallel()
 
 	var b bytes.Buffer
-	err := encryptPayloadToWriter(b, &b, &lnwallet.MockWalletController{Fail: true})
+	wc := lnwallet.NewMockWalletController(nil)
+	wc.DeriveKeyFail = true
+	err := encryptPayloadToWriter(b, &b, wc)
 	if err == nil {
 		t.Fatalf("expected error due to fail key gen")
 	}
@@ -128,7 +130,9 @@ func TestInvalidKeyDecrytion(t *testing.T) {
 	t.Parallel()
 
 	var b bytes.Buffer
-	_, err := decryptPayloadFromReader(&b, &lnwallet.MockWalletController{Fail: true})
+	wc := lnwallet.NewMockWalletController(nil)
+	wc.DeriveKeyFail = true
+	_, err := decryptPayloadFromReader(&b, wc)
 	if err == nil {
 		t.Fatalf("expected error due to fail key gen")
 	}

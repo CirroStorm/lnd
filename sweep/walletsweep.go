@@ -150,8 +150,7 @@ type WalletSweepPackage struct {
 // target fee rate, and will use the utxoSource and outpointLocker as sources
 // for wallet funds.
 func CraftSweepAllTx(feeRate lnwallet.SatPerKWeight, blockHeight uint32,
-	deliveryAddr btcutil.Address, coinSelectLocker CoinSelectionLocker,
-	utxoSource UtxoSource, outpointLocker OutpointLocker,
+	deliveryAddr btcutil.Address, wallet *lnwallet.LightningWallet,
 	feeEstimator lnwallet.FeeEstimator,
 	signer input.Signer) (*WalletSweepPackage, error) {
 
@@ -165,7 +164,7 @@ func CraftSweepAllTx(feeRate lnwallet.SatPerKWeight, blockHeight uint32,
 	// can actually craft a sweeping transaction.
 	unlockOutputs := func() {
 		for _, utxo := range allOutputs {
-			outpointLocker.UnlockOutpoint(utxo.OutPoint)
+			wallet.UnlockOutpoint(utxo.OutPoint)
 		}
 	}
 
@@ -173,11 +172,11 @@ func CraftSweepAllTx(feeRate lnwallet.SatPerKWeight, blockHeight uint32,
 	// selection takes place while we fetch and lock all outputs the wallet
 	// knows of.  Otherwise, it may be possible for a new funding flow to
 	// lock an output while we fetch the set of unspent witnesses.
-	err := coinSelectLocker.WithCoinSelectLock(func() error {
+	err := wallet.WithCoinSelectLock(func() error {
 		// Now that we can be sure that no other coin selection
 		// operations are going on, we can grab a clean snapshot of the
 		// current UTXO state of the wallet.
-		utxos, err := utxoSource.ListUnspentWitness(
+		utxos, err := wallet.ListUnspentWitness(
 			1, math.MaxInt32,
 		)
 		if err != nil {
@@ -188,7 +187,7 @@ func CraftSweepAllTx(feeRate lnwallet.SatPerKWeight, blockHeight uint32,
 		// attempt to use these UTXOs in transactions while we're
 		// crafting out sweep all transaction.
 		for _, utxo := range utxos {
-			outpointLocker.LockOutpoint(utxo.OutPoint)
+			wallet.LockOutpoint(utxo.OutPoint)
 		}
 
 		allOutputs = append(allOutputs, utxos...)
@@ -212,7 +211,7 @@ func CraftSweepAllTx(feeRate lnwallet.SatPerKWeight, blockHeight uint32,
 		// We'll consult the utxoSource for information concerning this
 		// outpoint, we'll need to properly populate a signDescriptor
 		// for this output.
-		outputInfo, err := utxoSource.FetchInputInfo(&output.OutPoint)
+		outputInfo, err := wallet.FetchInputInfo(&output.OutPoint)
 		if err != nil {
 			unlockOutputs()
 

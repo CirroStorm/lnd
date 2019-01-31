@@ -3,6 +3,7 @@ package lnwallet
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/btcsuite/btcd/blockchain"
@@ -267,6 +268,9 @@ type LightningWallet struct {
 	quit chan struct{}
 
 	wg sync.WaitGroup
+
+	// this is used to force CoinSelectLock to fail for testing
+	CoinSelectLockFail bool
 
 	// TODO(roasbeef): handle wallet lock/unlock
 }
@@ -1246,7 +1250,15 @@ func (l *LightningWallet) WithCoinSelectLock(f func() error) error {
 	l.coinSelectMtx.Lock()
 	defer l.coinSelectMtx.Unlock()
 
-	return f()
+	if err := f(); err != nil {
+		return err
+	}
+
+	if l.CoinSelectLockFail {
+		return fmt.Errorf("kek")
+	}
+
+	return nil
 }
 
 // selectCoinsAndChange performs coin selection in order to obtain witness
@@ -1436,8 +1448,6 @@ func coinSelect(feeRate SatPerKWeight, amt btcutil.Amount,
 
 // IsSynced returns a boolean indicating if from the PoV of the wallet,
 // it has fully synced to the current best block in the main chain.
-//
-// This is a part of the WalletController interface.
 func (l *LightningWallet) IsSynced() (bool, int64, error) {
 	b := l.Chain.GetBackend()
 
@@ -1481,4 +1491,90 @@ func (l *LightningWallet) IsSynced() (bool, int64, error) {
 	}
 
 	return true, myBestTimestamp, nil
+}
+
+// ConfirmedBalance returns the sum of all the wallet's unspent outputs that
+// have at least confs confirmations. If confs is set to zero, then all unspent
+// outputs, including those currently in the mempool will be included in the
+// final sum.
+func (b *LightningWallet) ConfirmedBalance(confs int32) (btcutil.Amount, error) {
+	var balance btcutil.Amount
+
+	witnessOutputs, err := b.ListUnspentWitness(confs, math.MaxInt32)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, witnessOutput := range witnessOutputs {
+		balance += witnessOutput.Value
+	}
+
+	return balance, nil
+}
+
+// ListUnspentWitness returns all unspent outputs which are version 0
+// witness programs. The 'minconfirms' and 'maxconfirms' parameters
+// indicate the minimum and maximum number of confirmations an output
+// needs in order to be returned by this method. Passing -1 as
+// 'minconfirms' indicates that even unconfirmed outputs should be
+// returned. Using MaxInt32 as 'maxconfirms' implies returning all
+// outputs with at least 'minconfirms'.
+func (b *LightningWallet) ListUnspentWitness(minConfs, maxConfs int32) (
+	[]*Utxo, error) {
+	// First, grab all the unfiltered currently unspent outputs.
+	unspentOutputs, err := b.ListUnspent(minConfs, maxConfs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Next, we'll run through all the regular outputs, only saving those
+	// which are p2wkh outputs or a p2wsh output nested within a p2sh output.
+	witnessOutputs := make([]*Utxo, 0, len(unspentOutputs))
+	for _, output := range unspentOutputs {
+		pkScript, err := hex.DecodeString(output.ScriptPubKey)
+		if err != nil {
+			return nil, err
+		}
+
+		var keyScope *waddrmgr.KeyScope
+		if txscript.IsPayToWitnessPubKeyHash(pkScript) {
+			keyScope = &waddrmgr.KeyScopeBIP0084
+		} else if txscript.IsPayToWitnessScriptHash(pkScript) {
+			keyScope = &waddrmgr.KeyScopeBIP0044
+		} else if txscript.IsPayToScriptHash(pkScript) {
+			// TODO(roasbeef): This assumes all p2sh outputs returned by the
+			// wallet are nested p2pkh. We can't check the redeem script because
+			// the btcwallet service does not include it.
+			keyScope = &waddrmgr.KeyScopeBIP0049Plus
+		}
+
+		if keyScope != nil {
+			txid, err := chainhash.NewHashFromStr(output.TxID)
+			if err != nil {
+				return nil, err
+			}
+
+			// We'll ensure we properly convert the amount given in
+			// BTC to satoshis.
+			amt, err := btcutil.NewAmount(output.Amount)
+			if err != nil {
+				return nil, err
+			}
+
+			utxo := &Utxo{
+				KeyScope: *keyScope,
+				Value:    amt,
+				PkScript: pkScript,
+				OutPoint: wire.OutPoint{
+					Hash:  *txid,
+					Index: output.Vout,
+				},
+				Confirmations: output.Confirmations,
+			}
+			witnessOutputs = append(witnessOutputs, utxo)
+		}
+
+	}
+
+	return witnessOutputs, nil
 }

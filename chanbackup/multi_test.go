@@ -26,7 +26,7 @@ func TestMultiPackUnpack(t *testing.T) {
 		multi.StaticBackups = append(multi.StaticBackups, single)
 	}
 
-	wallet := &lnwallet.MockWalletController{}
+	wallet := lnwallet.NewMockWalletController(nil)
 
 	versionTestCases := []struct {
 		// version is the pack/unpack version that we should use to
@@ -123,7 +123,7 @@ func TestMultiPackUnpack(t *testing.T) {
 func TestPackedMultiUnpack(t *testing.T) {
 	t.Parallel()
 
-	wallet := &lnwallet.MockWalletController{}
+	wallet := lnwallet.NewMockWalletController(nil)
 
 	// First, we'll make a new unpacked multi with a random channel.
 	testChannel, err := genRandomOpenChannelShell()

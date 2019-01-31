@@ -3,9 +3,8 @@ package btcwallet
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"math"
+	"github.com/btcsuite/btcd/btcjson"
 	"sync"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -134,12 +133,6 @@ func New(cfg Config) (*BtcWallet, error) {
 	}, nil
 }
 
-// InternalWallet returns a pointer to the internal base wallet which is the
-// core of btcwallet.
-func (b *BtcWallet) InternalWallet() *base.Wallet {
-	return b.wallet
-}
-
 // Start initializes the underlying rpc connection, the wallet itself, and
 // begins syncing to the current available blockchain state.
 //
@@ -200,27 +193,6 @@ func (b *BtcWallet) Stop() error {
 	return nil
 }
 
-// ConfirmedBalance returns the sum of all the wallet's unspent outputs that
-// have at least confs confirmations. If confs is set to zero, then all unspent
-// outputs, including those currently in the mempool will be included in the
-// final sum.
-//
-// This is a part of the WalletController interface.
-func (b *BtcWallet) ConfirmedBalance(confs int32) (btcutil.Amount, error) {
-	var balance btcutil.Amount
-
-	witnessOutputs, err := b.ListUnspentWitness(confs, math.MaxInt32)
-	if err != nil {
-		return 0, err
-	}
-
-	for _, witnessOutput := range witnessOutputs {
-		balance += witnessOutput.Value
-	}
-
-	return balance, nil
-}
-
 // NewAddress returns the next external or internal address for the wallet
 // dictated by the value of the `change` parameter. If change is true, then an
 // internal address will be returned, otherwise an external address should be
@@ -276,66 +248,12 @@ func (b *BtcWallet) UnlockOutpoint(o wire.OutPoint) {
 	b.wallet.UnlockOutpoint(o)
 }
 
-// ListUnspentWitness returns a slice of all the unspent outputs the wallet
+// ListUnspent returns a slice of all the unspent outputs the wallet
 // controls which pay to witness programs either directly or indirectly.
 //
 // This is a part of the WalletController interface.
-func (b *BtcWallet) ListUnspentWitness(minConfs, maxConfs int32) (
-	[]*lnwallet.Utxo, error) {
-	// First, grab all the unfiltered currently unspent outputs.
-	unspentOutputs, err := b.wallet.ListUnspent(minConfs, maxConfs, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Next, we'll run through all the regular outputs, only saving those
-	// which are p2wkh outputs or a p2wsh output nested within a p2sh output.
-	witnessOutputs := make([]*lnwallet.Utxo, 0, len(unspentOutputs))
-	for _, output := range unspentOutputs {
-		pkScript, err := hex.DecodeString(output.ScriptPubKey)
-		if err != nil {
-			return nil, err
-		}
-
-		var keyScope *waddrmgr.KeyScope
-		if txscript.IsPayToWitnessPubKeyHash(pkScript) {
-			keyScope = &waddrmgr.KeyScopeBIP0084
-		} else if txscript.IsPayToScriptHash(pkScript) {
-			// TODO(roasbeef): This assumes all p2sh outputs returned by the
-			// wallet are nested p2pkh. We can't check the redeem script because
-			// the btcwallet service does not include it.
-			keyScope = &waddrmgr.KeyScopeBIP0049Plus
-		}
-
-		if keyScope != nil {
-			txid, err := chainhash.NewHashFromStr(output.TxID)
-			if err != nil {
-				return nil, err
-			}
-
-			// We'll ensure we properly convert the amount given in
-			// BTC to satoshis.
-			amt, err := btcutil.NewAmount(output.Amount)
-			if err != nil {
-				return nil, err
-			}
-
-			utxo := &lnwallet.Utxo{
-				KeyScope: *keyScope,
-				Value:    amt,
-				PkScript: pkScript,
-				OutPoint: wire.OutPoint{
-					Hash:  *txid,
-					Index: output.Vout,
-				},
-				Confirmations: output.Confirmations,
-			}
-			witnessOutputs = append(witnessOutputs, utxo)
-		}
-
-	}
-
-	return witnessOutputs, nil
+func (b *BtcWallet) ListUnspent(minConfs, maxConfs int32) ([]*btcjson.ListUnspentResult, error) {
+	return b.wallet.ListUnspent(minConfs, maxConfs, nil)
 }
 
 // PublishTransaction performs cursory validation (dust checks, etc), then

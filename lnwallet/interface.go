@@ -3,6 +3,7 @@ package lnwallet
 import (
 	"errors"
 	"fmt"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"sync"
@@ -151,16 +152,6 @@ type WalletController interface {
 	// a non-nil error value of ErrNotMine should be returned instead.
 	FetchInputInfo(prevOut *wire.OutPoint) (*wire.TxOut, error)
 
-	// ConfirmedBalance returns the sum of all the wallet's unspent outputs
-	// that have at least confs confirmations. If confs is set to zero,
-	// then all unspent outputs, including those currently in the mempool
-	// will be included in the final sum.
-	//
-	// NOTE: Only witness outputs should be included in the computation of
-	// the total spendable balance of the wallet. We require this as only
-	// witness inputs can be used for funding channels.
-	ConfirmedBalance(confs int32) (btcutil.Amount, error)
-
 	// NewAddress returns the next external or internal address for the
 	// wallet dictated by the value of the `change` parameter. If change is
 	// true, then an internal address should be used, otherwise an external
@@ -180,14 +171,12 @@ type WalletController interface {
 	SendOutputs(outputs []*wire.TxOut,
 		feeRate SatPerKWeight) (*wire.MsgTx, error)
 
-	// ListUnspentWitness returns all unspent outputs which are version 0
-	// witness programs. The 'minconfirms' and 'maxconfirms' parameters
-	// indicate the minimum and maximum number of confirmations an output
-	// needs in order to be returned by this method. Passing -1 as
-	// 'minconfirms' indicates that even unconfirmed outputs should be
-	// returned. Using MaxInt32 as 'maxconfirms' implies returning all
-	// outputs with at least 'minconfirms'.
-	ListUnspentWitness(minconfirms, maxconfirms int32) ([]*Utxo, error)
+	// ListUnspent returns a slice of objects representing the unspent wallet
+	// transactions fitting the given criteria. The confirmations will be more than
+	// minconf, less than maxconf and if addresses is populated only the addresses
+	// contained within it will be considered.  If we know nothing about a
+	// transaction an empty array will be returned.
+	ListUnspent(minconfirms, maxconfirms int32) ([]*btcjson.ListUnspentResult, error)
 
 	// ListTransactionDetails returns a list of all transactions which are
 	// relevant to the wallet.

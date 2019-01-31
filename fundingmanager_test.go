@@ -244,9 +244,9 @@ func createTestFundingManager(t *testing.T, privKey *btcec.PrivateKey,
 	publTxChan := make(chan *wire.MsgTx, 1)
 	shutdownChan := make(chan struct{})
 
-	wc := &lnwallet.MockWalletController{
-		RootKey: alicePrivKey,
-	}
+	wc := lnwallet.NewMockWalletController(nil)
+	wc.RootKey = alicePrivKey
+
 	signer := &mockSigner{
 		key: alicePrivKey,
 	}

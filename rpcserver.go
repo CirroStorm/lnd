@@ -825,7 +825,6 @@ func (r *rpcServer) SendCoins(ctx context.Context,
 		// safe manner, so no need to worry about locking.
 		sweepTxPkg, err := sweep.CraftSweepAllTx(
 			feePerKw, uint32(bestHeight), sweepAddr, wallet,
-			wallet.WalletController, wallet.WalletController,
 			r.server.cc.feeEstimator, r.server.cc.signer,
 		)
 		if err != nil {

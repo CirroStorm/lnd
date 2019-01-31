@@ -189,7 +189,7 @@ func assertMultiEqual(t *testing.T, a, b *Multi) {
 func TestExtractMulti(t *testing.T) {
 	t.Parallel()
 
-	wallet := &lnwallet.MockWalletController{}
+	wallet := lnwallet.NewMockWalletController(nil)
 
 	// First, as prep, we'll create a single chan backup, then pack that
 	// fully into a multi backup.
