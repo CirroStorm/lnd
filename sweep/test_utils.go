@@ -2,7 +2,6 @@ package sweep
 
 import (
 	"fmt"
-	"github.com/btcsuite/btcwallet/chain"
 	"sync"
 	"testing"
 	"time"
@@ -15,7 +14,7 @@ import (
 
 var (
 	defaultTestTimeout = 5 * time.Second
-	mockChainIOHeight  = int32(100)
+	mockChainIOHeight  = uint32(100)
 )
 
 type mockSigner struct {
@@ -234,51 +233,4 @@ func (m *MockNotifier) RegisterSpendNtfn(outpoint *wire.OutPoint,
 				outpoint)
 		},
 	}, nil
-}
-
-type mockChainIO struct{}
-
-func (m *mockChainIO) GetBestBlock() (*chainhash.Hash, int32, error) {
-	return nil, mockChainIOHeight, nil
-}
-
-func (m *mockChainIO) GetUtxo(op *wire.OutPoint, pkScript []byte,
-	heightHint uint32) (*wire.TxOut, error) {
-
-	return nil, nil
-}
-
-func (m *mockChainIO) GetBlockHash(blockHeight int64) (*chainhash.Hash, error) {
-	return nil, nil
-}
-
-func (m *mockChainIO) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) {
-	return nil, nil
-}
-
-func (b *mockChainIO) GetBackend() chain.Interface {
-	return nil
-}
-
-func (b *mockChainIO) GetBlockHeader(
-	blockHash *chainhash.Hash) (*wire.BlockHeader, error) {
-	return nil, nil
-}
-
-func (b *mockChainIO) ReturnPublishTransactionError(err error) error {
-	return nil
-}
-
-func (b *mockChainIO) Start() error {
-	return nil
-}
-
-func (b *mockChainIO) Stop() {
-}
-
-func (*mockChainIO) SupportsUnconfirmedTransactions() bool {
-	return true
-}
-
-func (*mockChainIO) WaitForBackendToStart() {
 }

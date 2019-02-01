@@ -14,6 +14,7 @@ import (
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnwallet/chains"
 )
 
 var (
@@ -130,7 +131,7 @@ func createSweeperTestContext(t *testing.T) *sweeperTestContext {
 		Store:             store,
 		Signer:            &mockSigner{},
 		SweepTxConfTarget: 1,
-		ChainIO:           &mockChainIO{},
+		ChainIO:           chains.NewMockChainIO(mockChainIOHeight),
 		GenSweepScript: func() ([]byte, error) {
 			script := []byte{outputScriptCount}
 			outputScriptCount++

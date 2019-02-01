@@ -17,6 +17,7 @@ import (
 	"github.com/lightningnetwork/lightning-onion"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/htlcswitch"
+	"github.com/lightningnetwork/lnd/lnwallet/chains"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
@@ -31,7 +32,7 @@ type testCtx struct {
 
 	aliases map[string]*btcec.PublicKey
 
-	chain *mockChainIO
+	chain *chains.MockChainIO
 
 	chainView *mockChainView
 }
@@ -82,7 +83,7 @@ func createTestCtxFromGraphInstance(startingHeight uint32, graphInstance *testGr
 	// versions of the chain and channel notifier. As we don't need to test
 	// any p2p functionality, the peer send and switch send messages won't
 	// be populated.
-	chain := newMockChain(startingHeight)
+	chain := chains.NewMockChainIO(startingHeight)
 	chainView := newMockChainView(chain)
 	router, err := New(Config{
 		Graph:     graphInstance.graph,
@@ -965,7 +966,7 @@ func TestAddProof(t *testing.T) {
 	fundingBlock := &wire.MsgBlock{
 		Transactions: []*wire.MsgTx{fundingTx},
 	}
-	ctx.chain.addBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
+	ctx.chain.AddBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
 
 	// After utxo was recreated adding the edge without the proof.
 	edge := &channeldb.ChannelEdgeInfo{
@@ -1074,7 +1075,7 @@ func TestAddEdgeUnknownVertexes(t *testing.T) {
 	fundingBlock := &wire.MsgBlock{
 		Transactions: []*wire.MsgTx{fundingTx},
 	}
-	ctx.chain.addBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
+	ctx.chain.AddBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
 
 	edge := &channeldb.ChannelEdgeInfo{
 		ChannelID:        chanID.ToUint64(),
@@ -1172,7 +1173,7 @@ func TestAddEdgeUnknownVertexes(t *testing.T) {
 	fundingBlock = &wire.MsgBlock{
 		Transactions: []*wire.MsgTx{fundingTx},
 	}
-	ctx.chain.addBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
+	ctx.chain.AddBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
 
 	edge = &channeldb.ChannelEdgeInfo{
 		ChannelID: chanID.ToUint64(),
@@ -1336,8 +1337,8 @@ func TestWakeUpOnStaleBranch(t *testing.T) {
 			chanID1 = chanID.ToUint64()
 
 		}
-		ctx.chain.addBlock(block, height, rand.Uint32())
-		ctx.chain.setBestBlock(int32(height))
+		ctx.chain.AddBlock(block, height, rand.Uint32())
+		ctx.chain.SetBestBlock(int32(height))
 		ctx.chainView.notifyBlock(block.BlockHash(), height,
 			[]*wire.MsgTx{})
 	}
@@ -1368,8 +1369,8 @@ func TestWakeUpOnStaleBranch(t *testing.T) {
 				fundingTx)
 			chanID2 = chanID.ToUint64()
 		}
-		ctx.chain.addBlock(block, height, rand.Uint32())
-		ctx.chain.setBestBlock(int32(height))
+		ctx.chain.AddBlock(block, height, rand.Uint32())
+		ctx.chain.SetBestBlock(int32(height))
 		ctx.chainView.notifyBlock(block.BlockHash(), height,
 			[]*wire.MsgTx{})
 	}
@@ -1451,8 +1452,8 @@ func TestWakeUpOnStaleBranch(t *testing.T) {
 			Transactions: []*wire.MsgTx{},
 		}
 		height := uint32(forkHeight) + i
-		ctx.chain.addBlock(block, height, rand.Uint32())
-		ctx.chain.setBestBlock(int32(height))
+		ctx.chain.AddBlock(block, height, rand.Uint32())
+		ctx.chain.SetBestBlock(int32(height))
 	}
 
 	// Give time to process new blocks.
@@ -1536,8 +1537,8 @@ func TestDisconnectedBlocks(t *testing.T) {
 			chanID1 = chanID.ToUint64()
 
 		}
-		ctx.chain.addBlock(block, height, rand.Uint32())
-		ctx.chain.setBestBlock(int32(height))
+		ctx.chain.AddBlock(block, height, rand.Uint32())
+		ctx.chain.SetBestBlock(int32(height))
 		ctx.chainView.notifyBlock(block.BlockHash(), height,
 			[]*wire.MsgTx{})
 	}
@@ -1570,8 +1571,8 @@ func TestDisconnectedBlocks(t *testing.T) {
 			chanID2 = chanID.ToUint64()
 		}
 		minorityChain = append(minorityChain, block)
-		ctx.chain.addBlock(block, height, rand.Uint32())
-		ctx.chain.setBestBlock(int32(height))
+		ctx.chain.AddBlock(block, height, rand.Uint32())
+		ctx.chain.SetBestBlock(int32(height))
 		ctx.chainView.notifyBlock(block.BlockHash(), height,
 			[]*wire.MsgTx{})
 	}
@@ -1660,8 +1661,8 @@ func TestDisconnectedBlocks(t *testing.T) {
 			Transactions: []*wire.MsgTx{},
 		}
 		height := uint32(forkHeight) + i
-		ctx.chain.addBlock(block, height, rand.Uint32())
-		ctx.chain.setBestBlock(int32(height))
+		ctx.chain.AddBlock(block, height, rand.Uint32())
+		ctx.chain.SetBestBlock(int32(height))
 		ctx.chainView.notifyBlock(block.BlockHash(), height,
 			block.Transactions)
 	}
@@ -1717,8 +1718,8 @@ func TestRouterChansClosedOfflinePruneGraph(t *testing.T) {
 		t.Fatalf("unable create channel edge: %v", err)
 	}
 	block102.Transactions = append(block102.Transactions, fundingTx1)
-	ctx.chain.addBlock(block102, uint32(nextHeight), rand.Uint32())
-	ctx.chain.setBestBlock(int32(nextHeight))
+	ctx.chain.AddBlock(block102, uint32(nextHeight), rand.Uint32())
+	ctx.chain.SetBestBlock(int32(nextHeight))
 	ctx.chainView.notifyBlock(block102.BlockHash(), uint32(nextHeight),
 		[]*wire.MsgTx{})
 
@@ -1767,8 +1768,8 @@ func TestRouterChansClosedOfflinePruneGraph(t *testing.T) {
 		block := &wire.MsgBlock{
 			Transactions: []*wire.MsgTx{},
 		}
-		ctx.chain.addBlock(block, uint32(nextHeight), rand.Uint32())
-		ctx.chain.setBestBlock(int32(nextHeight))
+		ctx.chain.AddBlock(block, uint32(nextHeight), rand.Uint32())
+		ctx.chain.SetBestBlock(int32(nextHeight))
 		ctx.chainView.notifyBlock(block.BlockHash(), uint32(nextHeight),
 			[]*wire.MsgTx{})
 	}
@@ -1809,8 +1810,8 @@ func TestRouterChansClosedOfflinePruneGraph(t *testing.T) {
 				closingTx)
 		}
 
-		ctx.chain.addBlock(block, uint32(nextHeight), rand.Uint32())
-		ctx.chain.setBestBlock(int32(nextHeight))
+		ctx.chain.AddBlock(block, uint32(nextHeight), rand.Uint32())
+		ctx.chain.SetBestBlock(int32(nextHeight))
 		ctx.chainView.notifyBlock(block.BlockHash(), uint32(nextHeight),
 			[]*wire.MsgTx{})
 	}
@@ -1932,7 +1933,7 @@ func TestIsStaleNode(t *testing.T) {
 	fundingBlock := &wire.MsgBlock{
 		Transactions: []*wire.MsgTx{fundingTx},
 	}
-	ctx.chain.addBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
+	ctx.chain.AddBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
 
 	edge := &channeldb.ChannelEdgeInfo{
 		ChannelID:        chanID.ToUint64(),
@@ -2014,7 +2015,7 @@ func TestIsKnownEdge(t *testing.T) {
 	fundingBlock := &wire.MsgBlock{
 		Transactions: []*wire.MsgTx{fundingTx},
 	}
-	ctx.chain.addBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
+	ctx.chain.AddBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
 
 	edge := &channeldb.ChannelEdgeInfo{
 		ChannelID:        chanID.ToUint64(),
@@ -2067,7 +2068,7 @@ func TestIsStaleEdgePolicy(t *testing.T) {
 	fundingBlock := &wire.MsgBlock{
 		Transactions: []*wire.MsgTx{fundingTx},
 	}
-	ctx.chain.addBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
+	ctx.chain.AddBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
 
 	// If we query for staleness before adding the edge, we should get
 	// false.

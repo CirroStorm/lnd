@@ -6,6 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
+	"net"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -20,11 +26,6 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/shachain"
-	"math"
-	"net"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 const (
@@ -549,7 +550,7 @@ func (l *LightningWallet) handleFundingReserveRequest(req *InitFundingReserveMsg
 
 	// Once we have the root, we can then generate our shachain producer
 	// and from that generate the per-commitment point.
-	revRoot, err :=  chainhash.NewHash(revRootPrivKey.Serialize())
+	revRoot, err := chainhash.NewHash(revRootPrivKey.Serialize())
 	if err != nil {
 		req.err <- err
 		req.resp <- nil
@@ -1507,10 +1508,10 @@ func (l *LightningWallet) IsSynced() (bool, int64, error) {
 // have at least confs confirmations. If confs is set to zero, then all unspent
 // outputs, including those currently in the mempool will be included in the
 // final sum.
-func (b *LightningWallet) ConfirmedBalance(confs int32) (btcutil.Amount, error) {
+func (l *LightningWallet) ConfirmedBalance(confs int32) (btcutil.Amount, error) {
 	var balance btcutil.Amount
 
-	witnessOutputs, err := b.ListUnspentWitness(confs, math.MaxInt32)
+	witnessOutputs, err := l.ListUnspentWitness(confs, math.MaxInt32)
 	if err != nil {
 		return 0, err
 	}
@@ -1529,10 +1530,10 @@ func (b *LightningWallet) ConfirmedBalance(confs int32) (btcutil.Amount, error) 
 // 'minconfirms' indicates that even unconfirmed outputs should be
 // returned. Using MaxInt32 as 'maxconfirms' implies returning all
 // outputs with at least 'minconfirms'.
-func (b *LightningWallet) ListUnspentWitness(minConfs, maxConfs int32) (
+func (l *LightningWallet) ListUnspentWitness(minConfs, maxConfs int32) (
 	[]*Utxo, error) {
 	// First, grab all the unfiltered currently unspent outputs.
-	unspentOutputs, err := b.ListUnspent(minConfs, maxConfs)
+	unspentOutputs, err := l.ListUnspent(minConfs, maxConfs)
 	if err != nil {
 		return nil, err
 	}

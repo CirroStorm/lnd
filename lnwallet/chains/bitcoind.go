@@ -2,11 +2,12 @@ package chains
 
 import (
 	"encoding/hex"
+	"github.com/btcsuite/btcwallet/chain"
+	"strings"
+
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/btcsuite/btcwallet/chain"
 	"github.com/lightningnetwork/lnd/lnwallet"
-	"strings"
 )
 
 type BitcoindChain struct {
@@ -57,7 +58,7 @@ func (b *BitcoindChain) SupportsUnconfirmedTransactions() bool {
 	return true
 }
 
-// Backend specific code to ensure the backend has started
+// WaitForBackendToStart ensures the backend has started
 // This is currently only used for tests
 //
 // This method is a part of the lnwallet.BlockChainIO interface.

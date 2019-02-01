@@ -3,8 +3,6 @@ package lnwallet
 import (
 	"encoding/hex"
 	"fmt"
-	"sync/atomic"
-
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -12,6 +10,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/lightningnetwork/lnd/keychain"
+	"sync/atomic"
 )
 
 // MockWalletController is used by the LightningWallet, and let us mock the
@@ -21,20 +20,21 @@ type MockWalletController struct {
 	PrevAddres            btcutil.Address
 	PublishedTransactions chan *wire.MsgTx
 	Index                 uint32
-	DeriveKeyFail                  bool
-	LockedOutpoints map[uint32]struct{}
-	UnlockedOutpoints map[uint32]struct{}
-	TestUtxos []*Utxo
-	Outpoints map[uint32]*wire.TxOut
-	Outputs []*btcjson.ListUnspentResult
+	DeriveKeyFail         bool
+	LockedOutpoints       map[uint32]struct{}
+	UnlockedOutpoints     map[uint32]struct{}
+	TestUtxos             []*Utxo
+	Outpoints             map[uint32]*wire.TxOut
+	Outputs               []*btcjson.ListUnspentResult
 }
 
-func NewMockWalletController(utxos []*btcjson.ListUnspentResult) *MockWalletController {
+func NewMockWalletController(utxos []*btcjson.
+	ListUnspentResult) *MockWalletController {
 	m := &MockWalletController{
-		LockedOutpoints: make(map[uint32]struct{}),
+		LockedOutpoints:   make(map[uint32]struct{}),
 		UnlockedOutpoints: make(map[uint32]struct{}),
-		Outpoints: make(map[uint32]*wire.TxOut),
-		Outputs: utxos,
+		Outpoints:         make(map[uint32]*wire.TxOut),
+		Outputs:           utxos,
 	}
 
 	if utxos != nil {
@@ -58,10 +58,9 @@ func (m *MockWalletController) FetchInputInfo(
 		txOut, ok := m.Outpoints[prevOut.Index]
 		if !ok {
 			return nil, fmt.Errorf("no output found")
-		} else {
-			return txOut, nil
 		}
 
+		return txOut, nil
 	} else {
 		txOut := &wire.TxOut{
 			Value:    int64(10 * btcutil.SatoshiPerBitcoin),
@@ -71,7 +70,8 @@ func (m *MockWalletController) FetchInputInfo(
 	}
 }
 
-func (*MockWalletController) ConfirmedBalance(confs int32) (btcutil.Amount, error) {
+func (*MockWalletController) ConfirmedBalance(confs int32) (btcutil.Amount,
+	error) {
 	return 0, nil
 }
 
@@ -93,27 +93,29 @@ func (*MockWalletController) SendOutputs(outputs []*wire.TxOut,
 	return nil, nil
 }
 
-func (m *MockWalletController) ListUnspent(minConfs, maxConfs int32) ([]*btcjson.ListUnspentResult, error) {
+func (m *MockWalletController) ListUnspent(minConfs,
+	maxConfs int32) ([]*btcjson.ListUnspentResult, error) {
 	if m.Outputs != nil {
 		return m.Outputs, nil
-	} else {
-		utxo := &btcjson.ListUnspentResult{
-			Vout: m.Index,
-			ScriptPubKey: "0014643d8b15694a547d57336e51dffd38e30e6ef7ef",
-			Amount: btcutil.Amount(10 * btcutil.SatoshiPerBitcoin).ToBTC(),
-		}
-		atomic.AddUint32(&m.Index, 1)
-		var ret []*btcjson.ListUnspentResult
-		ret = append(ret, utxo)
-		return ret, nil
 	}
+
+	utxo := &btcjson.ListUnspentResult{
+		Vout:         m.Index,
+		ScriptPubKey: "0014643d8b15694a547d57336e51dffd38e30e6ef7ef",
+		Amount:       btcutil.Amount(10 * btcutil.SatoshiPerBitcoin).ToBTC(),
+	}
+	atomic.AddUint32(&m.Index, 1)
+	var ret []*btcjson.ListUnspentResult
+	ret = append(ret, utxo)
+	return ret, nil
 }
 
-func (*MockWalletController) ListTransactionDetails() ([]*TransactionDetail, error) {
+func (*MockWalletController) ListTransactionDetails() ([]*TransactionDetail,
+	error) {
 	return nil, nil
 }
 
-func (m *MockWalletController) LockOutpoint(o wire.OutPoint)   {
+func (m *MockWalletController) LockOutpoint(o wire.OutPoint) {
 	m.LockedOutpoints[o.Index] = struct{}{}
 }
 
@@ -126,7 +128,8 @@ func (m *MockWalletController) PublishTransaction(tx *wire.MsgTx) error {
 	return nil
 }
 
-func (*MockWalletController) SubscribeTransactions() (TransactionSubscription, error) {
+func (*MockWalletController) SubscribeTransactions() (
+	TransactionSubscription, error) {
 	return nil, nil
 }
 
@@ -142,17 +145,20 @@ func (*MockWalletController) Stop() error {
 	return nil
 }
 
-func (m *MockWalletController) DerivePrivKey(keyLoc keychain.KeyLocator) (*btcec.PrivateKey, error) {
+func (m *MockWalletController) DerivePrivKey(keyLoc keychain.KeyLocator) (
+	*btcec.PrivateKey, error) {
 	return m.RootKey, nil
 }
 
-func (m *MockWalletController) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.KeyDescriptor, error) {
+func (m *MockWalletController) DeriveNextKey(keyFam keychain.KeyFamily) (
+	keychain.KeyDescriptor, error) {
 	return keychain.KeyDescriptor{
 		PubKey: m.RootKey.PubKey(),
 	}, nil
 }
 
-func (m *MockWalletController) DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescriptor, error) {
+func (m *MockWalletController) DeriveKey(keyLoc keychain.KeyLocator) (
+	keychain.KeyDescriptor, error) {
 	if m.DeriveKeyFail {
 		return keychain.KeyDescriptor{}, fmt.Errorf("fail")
 	}

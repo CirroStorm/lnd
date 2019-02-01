@@ -2,13 +2,14 @@ package chains
 
 import (
 	"errors"
+	"strings"
+	"time"
+
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/chain"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/lightninglabs/neutrino"
 	"github.com/lightningnetwork/lnd/lnwallet"
-	"strings"
-	"time"
 )
 
 var (
@@ -75,7 +76,7 @@ func (b *NeutrinoChain) SupportsUnconfirmedTransactions() bool {
 	return false
 }
 
-// Backend specific code to ensure the backend has started
+// WaitForBackendToStart ensures the backend has started
 // This is currently only used for tests
 //
 // This method is a part of the lnwallet.BlockChainIO interface.

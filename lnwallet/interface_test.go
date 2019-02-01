@@ -5,10 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcwallet/waddrmgr"
-	"github.com/lightningnetwork/lnd/lnwallet/chains"
-	"github.com/lightningnetwork/lnd/lnwallet/hwwallet"
-	"google.golang.org/grpc"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -32,6 +28,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcwallet/chain"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/btcsuite/btcwallet/walletdb"
 	_ "github.com/btcsuite/btcwallet/walletdb/bdb"
 	"github.com/coreos/bbolt"
@@ -44,7 +41,10 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/btcwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/chains"
+	"github.com/lightningnetwork/lnd/lnwallet/hwwallet"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"google.golang.org/grpc"
 )
 
 var (

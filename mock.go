@@ -3,19 +3,14 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/btcsuite/btcwallet/chain"
-	"github.com/btcsuite/btcwallet/waddrmgr"
-	"sync"
-	"time"
-
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lnwallet"
+	"sync"
 )
 
 // The block height returned by the mock BlockChainIO's GetBestBlock.
@@ -167,91 +162,6 @@ func (m *mockSpendNotifier) Spend(outpoint *wire.OutPoint, height int32,
 			}
 		}
 	}
-}
-
-type mockChainIO struct {
-	bestHeight int32
-}
-
-func (m *mockChainIO) WaitForShutdown() {
-	panic("implement me")
-}
-
-func (m *mockChainIO) FilterBlocks(*chain.FilterBlocksRequest) (*chain.FilterBlocksResponse, error) {
-	panic("implement me")
-}
-
-func (m *mockChainIO) BlockStamp() (*waddrmgr.BlockStamp, error) {
-	return &waddrmgr.BlockStamp{Height: m.bestHeight, Timestamp: time.Now()}, nil
-}
-
-func (m *mockChainIO) SendRawTransaction(*wire.MsgTx, bool) (*chainhash.Hash, error) {
-	panic("implement me")
-}
-
-func (m *mockChainIO) Rescan(*chainhash.Hash, []btcutil.Address, map[wire.OutPoint]btcutil.Address) error {
-	panic("implement me")
-}
-
-func (m *mockChainIO) NotifyReceived([]btcutil.Address) error {
-	panic("implement me")
-}
-
-func (m *mockChainIO) NotifyBlocks() error {
-	panic("implement me")
-}
-
-func (m *mockChainIO) Notifications() <-chan interface{} {
-	panic("implement me")
-}
-
-func (m *mockChainIO) BackEnd() string {
-	panic("implement me")
-}
-
-func (m *mockChainIO) GetBestBlock() (*chainhash.Hash, int32, error) {
-	return activeNetParams.GenesisHash, m.bestHeight, nil
-}
-
-func (*mockChainIO) GetUtxo(op *wire.OutPoint, _ []byte,
-	heightHint uint32) (*wire.TxOut, error) {
-	return nil, nil
-}
-
-func (*mockChainIO) GetBlockHash(blockHeight int64) (*chainhash.Hash, error) {
-	return nil, nil
-}
-
-func (*mockChainIO) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) {
-	return nil, nil
-}
-
-func (b *mockChainIO) GetBackend() chain.Interface {
-	return b
-}
-
-func (b *mockChainIO) GetBlockHeader(
-	blockHash *chainhash.Hash) (*wire.BlockHeader, error) {
-
-	return &wire.BlockHeader{Timestamp: time.Now()}, nil
-}
-
-func (b *mockChainIO) ReturnPublishTransactionError(err error) error {
-	return nil
-}
-
-func (b *mockChainIO) Start() error {
-	return nil
-}
-
-func (b *mockChainIO) Stop() {
-}
-
-func (*mockChainIO) SupportsUnconfirmedTransactions() bool {
-	return true
-}
-
-func (*mockChainIO) WaitForBackendToStart() {
 }
 
 type mockPreimageCache struct {

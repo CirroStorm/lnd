@@ -28,6 +28,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnpeer"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/chains"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
@@ -250,9 +251,7 @@ func createTestFundingManager(t *testing.T, privKey *btcec.PrivateKey,
 	signer := &mockSigner{
 		key: alicePrivKey,
 	}
-	bio := &mockChainIO{
-		bestHeight: fundingBroadcastHeight,
-	}
+	bio := chains.NewMockChainIO(fundingBroadcastHeight)
 
 	dbDir := filepath.Join(tempTestDir, "cdb")
 	cdb, err := channeldb.Open(dbDir)

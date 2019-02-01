@@ -2,7 +2,6 @@ package contractcourt
 
 import (
 	"fmt"
-	"github.com/btcsuite/btcwallet/chain"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/chains"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
@@ -124,52 +124,6 @@ func (b *mockArbitratorLog) WipeHistory() error {
 	return nil
 }
 
-type mockChainIO struct{}
-
-func (*mockChainIO) GetBestBlock() (*chainhash.Hash, int32, error) {
-	return nil, 0, nil
-}
-
-func (*mockChainIO) GetUtxo(op *wire.OutPoint, _ []byte,
-	heightHint uint32) (*wire.TxOut, error) {
-	return nil, nil
-}
-
-func (*mockChainIO) GetBlockHash(blockHeight int64) (*chainhash.Hash, error) {
-	return nil, nil
-}
-
-func (*mockChainIO) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) {
-	return nil, nil
-}
-
-func (b *mockChainIO) GetBackend() chain.Interface {
-	return nil
-}
-
-func (b *mockChainIO) GetBlockHeader(
-	blockHash *chainhash.Hash) (*wire.BlockHeader, error) {
-	return nil, nil
-}
-
-func (b *mockChainIO) ReturnPublishTransactionError(err error) error {
-	return nil
-}
-
-func (b *mockChainIO) Start() error {
-	return nil
-}
-
-func (b *mockChainIO) Stop() {
-}
-
-func (*mockChainIO) SupportsUnconfirmedTransactions() bool {
-	return true
-}
-
-func (*mockChainIO) WaitForBackendToStart() {
-}
-
 func createTestChannelArbitrator(log ArbitratorLog) (*ChannelArbitrator,
 	chan struct{}, error) {
 	blockEpoch := &chainntnfs.BlockEpochEvent{
@@ -185,7 +139,7 @@ func createTestChannelArbitrator(log ArbitratorLog) (*ChannelArbitrator,
 		ContractBreach:          make(chan *lnwallet.BreachRetribution, 1),
 	}
 
-	chainIO := &mockChainIO{}
+	chainIO := chains.NewMockChainIO(0)
 	chainArbCfg := ChainArbitratorConfig{
 		ChainIO: chainIO,
 		PublishTx: func(*wire.MsgTx) error {

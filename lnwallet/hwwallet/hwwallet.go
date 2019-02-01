@@ -105,12 +105,14 @@ func (b *HwWallet) Stop() error {
 // returned.
 //
 // This is a part of the WalletController interface.
-func (b *HwWallet) NewAddress(keyScope waddrmgr.KeyScope, change bool) (btcutil.Address, error) {
-	// TODO handle keyscope
+func (b *HwWallet) NewAddress(keyScope waddrmgr.KeyScope,
+	change bool) (btcutil.Address, error) {
 
-	keyDescriptor, err := b.deriveNextKey(keyScope, keychain.KeyFamilyMultiSig, change)
+	keyDescriptor, err := b.deriveNextKey(keyScope,
+		keychain.KeyFamilyMultiSig, change)
 
-	result, err := btcutil.NewAddressPubKey(keyDescriptor.PubKey.SerializeCompressed(), b.cfg.NetParams)
+	result, err := btcutil.NewAddressPubKey(keyDescriptor.PubKey.
+		SerializeCompressed(), b.cfg.NetParams)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +174,8 @@ func (b *HwWallet) UnlockOutpoint(o wire.OutPoint) {
 // controls which pay to witness programs either directly or indirectly.
 //
 // This is a part of the WalletController interface.
-func (b *HwWallet) ListUnspent(minConfs, maxConfs int32) ([]*btcjson.ListUnspentResult, error) {
+func (b *HwWallet) ListUnspent(minConfs, maxConfs int32) ([]*btcjson.
+	ListUnspentResult, error) {
 	// TODO call rpc
 	pc, _, _, _ := runtime.Caller(1)
 	panic(fmt.Sprintf("%s", runtime.FuncForPC(pc).Name()))
@@ -196,7 +199,8 @@ func (b *HwWallet) PublishTransaction(tx *wire.MsgTx) error {
 // relevant to the wallet.
 //
 // This is a part of the WalletController interface.
-func (b *HwWallet) ListTransactionDetails() ([]*lnwallet.TransactionDetail, error) {
+func (b *HwWallet) ListTransactionDetails() ([]*lnwallet.TransactionDetail,
+	error) {
 	// TODO call RP
 	pc, _, _, _ := runtime.Caller(1)
 	panic(fmt.Sprintf("%s", runtime.FuncForPC(pc).Name()))
@@ -215,7 +219,8 @@ type txSubscriptionClient struct {
 // relevant transactions are confirmed.
 //
 // This is part of the TransactionSubscription interface.
-func (t *txSubscriptionClient) ConfirmedTransactions() chan *lnwallet.TransactionDetail {
+func (t *txSubscriptionClient) ConfirmedTransactions() chan *lnwallet.
+	TransactionDetail {
 	return t.confirmed
 }
 
@@ -223,7 +228,8 @@ func (t *txSubscriptionClient) ConfirmedTransactions() chan *lnwallet.Transactio
 // new relevant transactions are seen within the network.
 //
 // This is part of the TransactionSubscription interface.
-func (t *txSubscriptionClient) UnconfirmedTransactions() chan *lnwallet.TransactionDetail {
+func (t *txSubscriptionClient) UnconfirmedTransactions() chan *lnwallet.
+	TransactionDetail {
 	return t.unconfirmed
 }
 
@@ -239,7 +245,8 @@ func (t *txSubscriptionClient) Cancel() {
 // blocks.
 //
 // This is a part of the WalletController interface.
-func (b *HwWallet) SubscribeTransactions() (lnwallet.TransactionSubscription, error) {
+func (b *HwWallet) SubscribeTransactions() (lnwallet.
+	TransactionSubscription, error) {
 	txClient := &txSubscriptionClient{
 		confirmed:   make(chan *lnwallet.TransactionDetail),
 		unconfirmed: make(chan *lnwallet.TransactionDetail),
@@ -248,7 +255,8 @@ func (b *HwWallet) SubscribeTransactions() (lnwallet.TransactionSubscription, er
 	return txClient, nil
 }
 
-func (b *HwWallet) deriveNextKey(keyScope waddrmgr.KeyScope, keyFam keychain.KeyFamily, change bool) (keychain.KeyDescriptor, error) {
+func (b *HwWallet) deriveNextKey(keyScope waddrmgr.KeyScope,
+	keyFam keychain.KeyFamily, change bool) (keychain.KeyDescriptor, error) {
 	var result keychain.KeyDescriptor
 
 	accountKey, err := b.getAccountKey(keyFam)
@@ -298,7 +306,8 @@ func (b *HwWallet) deriveNextKey(keyScope waddrmgr.KeyScope, keyFam keychain.Key
 // child within this branch.
 //
 // NOTE: This is part of the keychain.KeyRing interface.
-func (b *HwWallet) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.KeyDescriptor, error) {
+func (b *HwWallet) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.
+	KeyDescriptor, error) {
 	return b.deriveNextKey(b.keyScope, keyFam, false)
 }
 
@@ -307,7 +316,8 @@ func (b *HwWallet) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.KeyDescrip
 // rotating something like our current default node key.
 //
 // NOTE: This is part of the keychain.KeyRing interface.
-func (b *HwWallet) DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescriptor, error) {
+func (b *HwWallet) DeriveKey(keyLoc keychain.KeyLocator) (keychain.
+	KeyDescriptor, error) {
 	var result keychain.KeyDescriptor
 
 	// m / purpose' / coin_type' / account' / change / address_index
@@ -333,12 +343,14 @@ func (b *HwWallet) DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescriptor
 	return result, nil
 }
 
-func (b *HwWallet) DerivePrivKey(keyLoc keychain.KeyLocator) (*btcec.PrivateKey, error) {
-	// private keys for KeyFamilyMultiSig are stored on a separate device and so are not
-	// available directly
+func (b *HwWallet) DerivePrivKey(keyLoc keychain.KeyLocator) (*btcec.
+	PrivateKey, error) {
+	// private keys for KeyFamilyMultiSig are stored on a separate device and
+	// so are not available directly
 	// but we can return private keys for other families
 	if keyLoc.Family == keychain.KeyFamilyMultiSig {
-		return nil, errors.New("Getting private keys for KeyFamilyMultiSig is not allowed")
+		return nil, errors.New("Getting private keys for KeyFamilyMultiSig is" +
+			" not allowed")
 	}
 
 	var result *btcec.PrivateKey
@@ -385,7 +397,8 @@ func (b *HwWallet) DerivePrivKey(keyLoc keychain.KeyLocator) (*btcec.PrivateKey,
 //  }
 //}
 
-func (b *HwWallet) getFamilyBucket(family keychain.KeyFamily, tx walletdb.ReadWriteTx) (walletdb.ReadWriteBucket, error) {
+func (b *HwWallet) getFamilyBucket(family keychain.KeyFamily,
+	tx walletdb.ReadWriteTx) (walletdb.ReadWriteBucket, error) {
 	var err error
 
 	scopeBucketKey := []byte(b.keyScope.String())
@@ -409,7 +422,8 @@ func (b *HwWallet) getFamilyBucket(family keychain.KeyFamily, tx walletdb.ReadWr
 	return familyBucket, nil
 }
 
-func (b *HwWallet) getAccountKey(family keychain.KeyFamily) (*bip32.Key, error) {
+func (b *HwWallet) getAccountKey(family keychain.KeyFamily) (*bip32.Key,
+	error) {
 	var result *bip32.Key
 
 	err := walletdb.Update(b.db, func(tx walletdb.ReadWriteTx) error {
@@ -422,7 +436,8 @@ func (b *HwWallet) getAccountKey(family keychain.KeyFamily) (*bip32.Key, error) 
 		publicKeyBytes := familyBucket.Get(publicKeyKey)
 		if publicKeyBytes == nil {
 			// TODO call rpc to get public key for account
-			req := DerivePublicKeyReq{fmt.Sprintf("m/%d'/%d/%d'", b.keyScope.Purpose, b.keyScope.Coin, family)}
+			req := DerivePublicKeyReq{fmt.Sprintf("m/%d'/%d/%d'",
+				b.keyScope.Purpose, b.keyScope.Coin, family)}
 			resp, err := b.client.DerivePublicKey(context.Background(), &req)
 			if err != nil {
 				return err
@@ -445,7 +460,8 @@ func (b *HwWallet) getAccountKey(family keychain.KeyFamily) (*bip32.Key, error) 
 	return result, nil
 }
 
-func (b *HwWallet) getNextAddressIndex(family keychain.KeyFamily, change bool) (uint32, error) {
+func (b *HwWallet) getNextAddressIndex(family keychain.KeyFamily,
+	change bool) (uint32, error) {
 	var result uint32
 
 	err := walletdb.Update(b.db, func(tx walletdb.ReadWriteTx) error {

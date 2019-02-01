@@ -126,23 +126,23 @@ var deliveryAddr = func() btcutil.Address {
 var testUtxos = []*btcjson.ListUnspentResult{
 	{
 		// A p2wkh output.
-		TxID: "1",
-		Vout: 1,
-		Amount: 1000,
+		TxID:         "1",
+		Vout:         1,
+		Amount:       1000,
 		ScriptPubKey: "0014643d8b15694a547d57336e51dffd38e30e6ef7ef",
 	},
 	{
 		// A np2wkh output.
-		TxID: "2",
-		Vout: 2,
-		Amount: 2000,
+		TxID:         "2",
+		Vout:         2,
+		Amount:       2000,
 		ScriptPubKey: "a9149717f7d15f6f8b07e3584319b97ea92018c317d787",
 	},
 	{
 		// A p2wsh output.
-		TxID: "3",
-		Vout: 3,
-		Amount: 3000,
+		TxID:         "3",
+		Vout:         3,
+		Amount:       3000,
 		ScriptPubKey: "0020701a8d401c84fb13e6baf169d59684e27abd9fa216c8bc5b9fc63d622ff8c58c",
 	},
 }

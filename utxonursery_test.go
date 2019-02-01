@@ -20,8 +20,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/channeldb"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/chains"
 	"github.com/lightningnetwork/lnd/sweep"
 )
 
@@ -399,7 +399,7 @@ func TestBabyOutputSerialization(t *testing.T) {
 type nurseryTestContext struct {
 	nursery     *utxoNursery
 	notifier    *sweep.MockNotifier
-	chainIO     *mockChainIO
+	chainIO     *chains.MockChainIO
 	publishChan chan wire.MsgTx
 	store       *nurseryStoreInterceptor
 	restart     func() bool
@@ -446,9 +446,7 @@ func createNurseryTestContext(t *testing.T,
 
 	timeoutChan := make(chan chan time.Time)
 
-	chainIO := &mockChainIO{
-		bestHeight: 0,
-	}
+	chainIO := chains.NewMockChainIO(0)
 
 	sweeper := newMockSweeper(t)
 
@@ -526,7 +524,7 @@ func createNurseryTestContext(t *testing.T,
 func (ctx *nurseryTestContext) notifyEpoch(height int32) {
 	ctx.t.Helper()
 
-	ctx.chainIO.bestHeight = height
+	ctx.chainIO.SetBestBlock(height)
 	ctx.notifier.NotifyEpoch(height)
 }
 

@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/btcsuite/btcd/btcjson"
 	"sync"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -24,11 +24,11 @@ const (
 )
 
 var (
-	// waddrmgrNamespaceKey is the namespace key that the waddrmgr state is
+	// WaddrmgrNamespaceKey is the namespace key that the waddrmgr state is
 	// stored within the top-level waleltdb buckets of btcwallet.
 	WaddrmgrNamespaceKey = []byte("waddrmgr")
 
-	// lightningAddrSchema is the scope addr schema for all keys that we
+	// LightningAddrSchema is the scope addr schema for all keys that we
 	// derive. We'll treat them all as p2wkh addresses, as atm we must
 	// specify a particular type.
 	LightningAddrSchema = waddrmgr.ScopeAddrSchema{
@@ -198,7 +198,8 @@ func (b *BtcWallet) Stop() error {
 // returned.
 //
 // This is a part of the WalletController interface.
-func (b *BtcWallet) NewAddress(keyScope waddrmgr.KeyScope, change bool) (btcutil.Address, error) {
+func (b *BtcWallet) NewAddress(keyScope waddrmgr.KeyScope,
+	change bool) (btcutil.Address, error) {
 	if change {
 		return b.wallet.NewChangeAddress(defaultAccount, keyScope)
 	}
@@ -251,7 +252,8 @@ func (b *BtcWallet) UnlockOutpoint(o wire.OutPoint) {
 // controls which pay to witness programs either directly or indirectly.
 //
 // This is a part of the WalletController interface.
-func (b *BtcWallet) ListUnspent(minConfs, maxConfs int32) ([]*btcjson.ListUnspentResult, error) {
+func (b *BtcWallet) ListUnspent(minConfs, maxConfs int32) ([]*btcjson.
+	ListUnspentResult, error) {
 	return b.wallet.ListUnspent(minConfs, maxConfs, nil)
 }
 
@@ -369,7 +371,8 @@ func unminedTransactionsToDetail(
 // relevant to the wallet.
 //
 // This is a part of the WalletController interface.
-func (b *BtcWallet) ListTransactionDetails() ([]*lnwallet.TransactionDetail, error) {
+func (b *BtcWallet) ListTransactionDetails() ([]*lnwallet.TransactionDetail,
+	error) {
 	// Grab the best block the wallet knows of, we'll use this to calculate
 	// # of confirmations shortly below.
 	bestBlock := b.wallet.Manager.SyncedTo()
@@ -430,7 +433,8 @@ type txSubscriptionClient struct {
 // relevant transactions are confirmed.
 //
 // This is part of the TransactionSubscription interface.
-func (t *txSubscriptionClient) ConfirmedTransactions() chan *lnwallet.TransactionDetail {
+func (t *txSubscriptionClient) ConfirmedTransactions() chan *lnwallet.
+	TransactionDetail {
 	return t.confirmed
 }
 
@@ -438,7 +442,8 @@ func (t *txSubscriptionClient) ConfirmedTransactions() chan *lnwallet.Transactio
 // new relevant transactions are seen within the network.
 //
 // This is part of the TransactionSubscription interface.
-func (t *txSubscriptionClient) UnconfirmedTransactions() chan *lnwallet.TransactionDetail {
+func (t *txSubscriptionClient) UnconfirmedTransactions() chan *lnwallet.
+	TransactionDetail {
 	return t.unconfirmed
 }
 
@@ -467,7 +472,8 @@ out:
 			// notifications for any newly confirmed transactions.
 			go func() {
 				for _, block := range txNtfn.AttachedBlocks {
-					details, err := minedTransactionsToDetails(currentHeight, block, t.w.ChainParams())
+					details, err := minedTransactionsToDetails(
+						currentHeight, block, t.w.ChainParams())
 					if err != nil {
 						continue
 					}
@@ -513,7 +519,8 @@ out:
 // blocks.
 //
 // This is a part of the WalletController interface.
-func (b *BtcWallet) SubscribeTransactions() (lnwallet.TransactionSubscription, error) {
+func (b *BtcWallet) SubscribeTransactions() (lnwallet.
+	TransactionSubscription, error) {
 	walletClient := b.wallet.NtfnServer.TransactionNotifications()
 
 	txClient := &txSubscriptionClient{
@@ -588,7 +595,8 @@ func (b *BtcWallet) createAccountIfNotExists(
 // child within this branch.
 //
 // NOTE: This is part of the keychain.KeyRing interface.
-func (b *BtcWallet) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.KeyDescriptor, error) {
+func (b *BtcWallet) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.
+	KeyDescriptor, error) {
 	var (
 		pubKey *btcec.PublicKey
 		keyLoc keychain.KeyLocator
@@ -651,7 +659,8 @@ func (b *BtcWallet) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.KeyDescri
 // rotating something like our current default node key.
 //
 // NOTE: This is part of the keychain.KeyRing interface.
-func (b *BtcWallet) DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescriptor, error) {
+func (b *BtcWallet) DeriveKey(keyLoc keychain.KeyLocator) (keychain.
+	KeyDescriptor, error) {
 	var keyDesc keychain.KeyDescriptor
 
 	db := b.wallet.Database()
@@ -693,15 +702,18 @@ func (b *BtcWallet) DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescripto
 	return keyDesc, nil
 }
 
-// attempt to derive the private key that corresponds to the
+// DerivePrivKey will attempt to derive the private key that corresponds to the
 // passed key descriptor.
 //
 // NOTE: This is part of the keychain.SecretKeyRing interface.
-func (b *BtcWallet) DerivePrivKey(keyLoc keychain.KeyLocator) (*btcec.PrivateKey, error) {
-	// BtcWallet technically could allow this, but since this is a restriction caused by HwWallet
-	// we will enforce the restriction as well
+func (b *BtcWallet) DerivePrivKey(keyLoc keychain.KeyLocator) (*btcec.
+	PrivateKey, error) {
+	// BtcWallet technically could allow this,
+	// but since this is a restriction caused by HwWallet we will enforce
+	// the restriction as well
 	if keyLoc.Family == keychain.KeyFamilyMultiSig {
-		return nil, errors.New("Getting private keys for KeyFamilyMultiSig is not allowed")
+		return nil, errors.New("Getting private keys for KeyFamilyMultiSig" +
+			" is not allowed")
 	}
 
 	var key *btcec.PrivateKey

@@ -1,8 +1,6 @@
 package routing
 
 import (
-	"fmt"
-	"github.com/btcsuite/btcwallet/chain"
 	"image/color"
 	"net"
 	"sync"
@@ -105,7 +103,7 @@ func createChannelEdge(ctx *testCtx, bitcoinKey1, bitcoinKey2 []byte,
 	}
 
 	// With the utxo constructed, we'll mark it as closed.
-	ctx.chain.addUtxo(chanUtxo, tx)
+	ctx.chain.AddUtxo(chanUtxo, tx)
 
 	// Our fake channel will be "confirmed" at height 101.
 	chanID := &lnwire.ShortChannelID{
@@ -115,130 +113,6 @@ func createChannelEdge(ctx *testCtx, bitcoinKey1, bitcoinKey2 []byte,
 	}
 
 	return fundingTx, &chanUtxo, chanID, nil
-}
-
-type mockChainIO struct {
-	blocks     map[chainhash.Hash]*wire.MsgBlock
-	blockIndex map[uint32]chainhash.Hash
-
-	utxos map[wire.OutPoint]wire.TxOut
-
-	bestHeight int32
-	bestHash   *chainhash.Hash
-
-	sync.RWMutex
-}
-
-// A compile time check to ensure mockChainIO implements the
-// lnwallet.BlockChainIO interface.
-var _ lnwallet.BlockChainIO = (*mockChainIO)(nil)
-
-func newMockChain(currentHeight uint32) *mockChainIO {
-	return &mockChainIO{
-		bestHeight: int32(currentHeight),
-		blocks:     make(map[chainhash.Hash]*wire.MsgBlock),
-		utxos:      make(map[wire.OutPoint]wire.TxOut),
-		blockIndex: make(map[uint32]chainhash.Hash),
-	}
-}
-
-func (m *mockChainIO) setBestBlock(height int32) {
-	m.Lock()
-	defer m.Unlock()
-
-	m.bestHeight = height
-}
-
-func (m *mockChainIO) GetBestBlock() (*chainhash.Hash, int32, error) {
-	m.RLock()
-	defer m.RUnlock()
-
-	blockHash := m.blockIndex[uint32(m.bestHeight)]
-
-	return &blockHash, m.bestHeight, nil
-}
-
-func (m *mockChainIO) GetTransaction(txid *chainhash.Hash) (*wire.MsgTx, error) {
-	return nil, nil
-}
-
-func (m *mockChainIO) GetBlockHash(blockHeight int64) (*chainhash.Hash, error) {
-	m.RLock()
-	defer m.RUnlock()
-
-	hash, ok := m.blockIndex[uint32(blockHeight)]
-	if !ok {
-		return nil, fmt.Errorf("can't find block hash, for "+
-			"height %v", blockHeight)
-	}
-
-	return &hash, nil
-}
-
-func (m *mockChainIO) addUtxo(op wire.OutPoint, out *wire.TxOut) {
-	m.Lock()
-	m.utxos[op] = *out
-	m.Unlock()
-}
-
-func (m *mockChainIO) GetUtxo(op *wire.OutPoint, _ []byte, _ uint32) (*wire.TxOut, error) {
-	m.RLock()
-	defer m.RUnlock()
-
-	utxo, ok := m.utxos[*op]
-	if !ok {
-		return nil, fmt.Errorf("utxo not found")
-	}
-
-	return &utxo, nil
-}
-
-func (m *mockChainIO) addBlock(block *wire.MsgBlock, height uint32, nonce uint32) {
-	m.Lock()
-	block.Header.Nonce = nonce
-	hash := block.Header.BlockHash()
-	m.blocks[hash] = block
-	m.blockIndex[height] = hash
-	m.Unlock()
-}
-
-func (m *mockChainIO) GetBlock(blockHash *chainhash.Hash) (*wire.MsgBlock, error) {
-	m.RLock()
-	defer m.RUnlock()
-
-	block, ok := m.blocks[*blockHash]
-	if !ok {
-		return nil, fmt.Errorf("block not found")
-	}
-
-	return block, nil
-}
-
-func (b *mockChainIO) GetBackend() chain.Interface {
-	return nil
-}
-
-func (b *mockChainIO) GetBlockHeader(
-	blockHash *chainhash.Hash) (*wire.BlockHeader, error) {
-	return nil, nil
-}
-
-func (b *mockChainIO) ReturnPublishTransactionError(err error) error {
-	return nil
-}
-
-func (b *mockChainIO) Start() error {
-	return nil
-}
-
-func (b *mockChainIO) Stop() {
-}
-
-func (*mockChainIO) SupportsUnconfirmedTransactions() bool {
-	return true
-}
-
-func (*mockChainIO) WaitForBackendToStart() {
 }
 
 type mockChainView struct {
@@ -390,7 +264,7 @@ func TestEdgeUpdateNotification(t *testing.T) {
 	fundingBlock := &wire.MsgBlock{
 		Transactions: []*wire.MsgTx{fundingTx},
 	}
-	ctx.chain.addBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
+	ctx.chain.AddBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
 
 	// Next we'll create two test nodes that the fake channel will be open
 	// between.
@@ -581,7 +455,7 @@ func TestNodeUpdateNotification(t *testing.T) {
 	fundingBlock := &wire.MsgBlock{
 		Transactions: []*wire.MsgTx{fundingTx},
 	}
-	ctx.chain.addBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
+	ctx.chain.AddBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
 
 	// Create two nodes acting as endpoints in the created channel, and use
 	// them to trigger notifications by sending updated node announcement
@@ -764,7 +638,7 @@ func TestNotificationCancellation(t *testing.T) {
 	fundingBlock := &wire.MsgBlock{
 		Transactions: []*wire.MsgTx{fundingTx},
 	}
-	ctx.chain.addBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
+	ctx.chain.AddBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
 
 	// We'll create a fresh new node topology update to feed to the channel
 	// router.
@@ -849,7 +723,7 @@ func TestChannelCloseNotification(t *testing.T) {
 	fundingBlock := &wire.MsgBlock{
 		Transactions: []*wire.MsgTx{fundingTx},
 	}
-	ctx.chain.addBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
+	ctx.chain.AddBlock(fundingBlock, chanID.BlockHeight, chanID.BlockHeight)
 
 	// Next we'll create two test nodes that the fake channel will be open
 	// between.
@@ -903,7 +777,7 @@ func TestChannelCloseNotification(t *testing.T) {
 			},
 		},
 	}
-	ctx.chain.addBlock(newBlock, blockHeight, blockHeight)
+	ctx.chain.AddBlock(newBlock, blockHeight, blockHeight)
 	ctx.chainView.notifyBlock(newBlock.Header.BlockHash(), blockHeight,
 		newBlock.Transactions)
 

@@ -21,6 +21,7 @@ import (
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
+	"github.com/lightningnetwork/lnd/lnwallet/chains"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/shachain"
 	"github.com/lightningnetwork/lnd/ticker"
@@ -317,9 +318,7 @@ func createTestPeer(notifier chainntnfs.ChainNotifier,
 	}
 	bobPool.Start()
 
-	chainIO := &mockChainIO{
-		bestHeight: fundingBroadcastHeight,
-	}
+	chainIO := chains.NewMockChainIO(fundingBroadcastHeight)
 	wc := lnwallet.NewMockWalletController(nil)
 	wc.RootKey = aliceKeyPriv
 	wc.PublishedTransactions = publTx
