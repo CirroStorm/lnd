@@ -539,7 +539,17 @@ func (l *LightningWallet) handleFundingReserveRequest(req *InitFundingReserveMsg
 		req.resp <- nil
 		return
 	}
-	revRoot, err := l.GetRevocationRoot(nextRevocationKeyDesc)
+
+	revRootPrivKey, err := l.DerivePrivKey(nextRevocationKeyDesc.KeyLocator)
+	if err != nil {
+		req.err <- err
+		req.resp <- nil
+		return
+	}
+
+	// Once we have the root, we can then generate our shachain producer
+	// and from that generate the per-commitment point.
+	revRoot, err :=  chainhash.NewHash(revRootPrivKey.Serialize())
 	if err != nil {
 		req.err <- err
 		req.resp <- nil

@@ -2,14 +2,13 @@ package btcwallet
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"errors"
 	"fmt"
 	"github.com/btcsuite/btcd/btcjson"
 	"sync"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
@@ -694,11 +693,17 @@ func (b *BtcWallet) DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescripto
 	return keyDesc, nil
 }
 
-// derivePrivKey attempts to derive the private key that corresponds to the
+// attempt to derive the private key that corresponds to the
 // passed key descriptor.
 //
 // NOTE: This is part of the keychain.SecretKeyRing interface.
-func (b *BtcWallet) derivePrivKey(keyDesc keychain.KeyDescriptor) (*btcec.PrivateKey, error) {
+func (b *BtcWallet) DerivePrivKey(keyLoc keychain.KeyLocator) (*btcec.PrivateKey, error) {
+	// BtcWallet technically could allow this, but since this is a restriction caused by HwWallet
+	// we will enforce the restriction as well
+	if keyLoc.Family == keychain.KeyFamilyMultiSig {
+		return nil, errors.New("Getting private keys for KeyFamilyMultiSig is not allowed")
+	}
+
 	var key *btcec.PrivateKey
 
 	db := b.wallet.Database()
@@ -714,147 +719,34 @@ func (b *BtcWallet) derivePrivKey(keyDesc keychain.KeyDescriptor) (*btcec.Privat
 		// for the first time in order to derive the keys that we
 		// require.
 		err = b.createAccountIfNotExists(
-			addrmgrNs, keyDesc.Family, scope,
+			addrmgrNs, keyLoc.Family, scope,
 		)
 		if err != nil {
 			return err
 		}
 
-		// If the public key isn't set or they have a non-zero index,
-		// then we know that the caller instead knows the derivation
-		// path for a key.
-		if keyDesc.PubKey == nil || keyDesc.Index > 0 {
-			// Now that we know the account exists, we can safely
-			// derive the full private key from the given path.
-			path := waddrmgr.DerivationPath{
-				Account: uint32(keyDesc.Family),
-				Branch:  0,
-				Index:   uint32(keyDesc.Index),
-			}
-			addr, err := scope.DeriveFromKeyPath(addrmgrNs, path)
-			if err != nil {
-				return err
-			}
-
-			key, err = addr.(waddrmgr.ManagedPubKeyAddress).PrivKey()
-			if err != nil {
-				return err
-			}
-
-			return nil
-		}
-
-		// If the public key isn't nil, then this indicates that we
-		// need to scan for the private key, assuming that we know the
-		// valid key family.
-		nextPath := waddrmgr.DerivationPath{
-			Account: uint32(keyDesc.Family),
+		// Now that we know the account exists, we can safely
+		// derive the full private key from the given path.
+		path := waddrmgr.DerivationPath{
+			Account: uint32(keyLoc.Family),
 			Branch:  0,
-			Index:   0,
+			Index:   uint32(keyLoc.Index),
+		}
+		addr, err := scope.DeriveFromKeyPath(addrmgrNs, path)
+		if err != nil {
+			return err
 		}
 
-		// We'll now iterate through our key range in an attempt to
-		// find the target public key.
-		//
-		// TODO(roasbeef): possibly move scanning into wallet to allow
-		// to be parallelized
-		for i := 0; i < lnwallet.MaxKeyRangeScan; i++ {
-			// Derive the next key in the range and fetch its
-			// managed address.
-			addr, err := scope.DeriveFromKeyPath(
-				addrmgrNs, nextPath,
-			)
-			if err != nil {
-				return err
-			}
-			managedAddr := addr.(waddrmgr.ManagedPubKeyAddress)
-
-			// If this is the target public key, then we'll return
-			// it directly back to the caller.
-			if managedAddr.PubKey().IsEqual(keyDesc.PubKey) {
-				key, err = managedAddr.PrivKey()
-				if err != nil {
-					return err
-				}
-
-				return nil
-			}
-
-			// This wasn't the target key, so roll forward and try
-			// the next one.
-			nextPath.Index++
+		key, err = addr.(waddrmgr.ManagedPubKeyAddress).PrivKey()
+		if err != nil {
+			return err
 		}
 
-		// If we reach this point, then we we're unable to derive the
-		// private key, so return an error back to the user.
-		return lnwallet.ErrCannotDerivePrivKey
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	return key, nil
-}
-
-// NewBtcWalletKeyRing creates a new implementation of the
-// keychain.SecretKeyRing interface backed by btcwallet.
-//
-// NOTE: The passed waddrmgr.Manager MUST be unlocked in order for the keychain
-// to function.
-//func NewBtcWalletKeyRing(w *wallet.Wallet, coinType uint32) SecretKeyRing {
-//	// Construct the key scope that will be used within the waddrmgr to
-//	// create an HD chain for deriving all of our required keys. A different
-//	// scope is used for each specific coin type.
-//	chainKeyScope := waddrmgr.KeyScope{
-//		Purpose: keychain.BIP0043Purpose,
-//		Coin:    coinType,
-//	}
-//
-//	return &BtcWalletKeyRing{
-//		wallet:        w,
-//		chainKeyScope: chainKeyScope,
-//	}
-//}
-
-func (b *BtcWallet) GetRevocationRoot(nextRevocationKeyDesc keychain.KeyDescriptor) (*chainhash.Hash, error) {
-	revocationRoot, err := b.derivePrivKey(nextRevocationKeyDesc)
-	if err != nil {
-		return nil, err
-	}
-
-	// Once we have the root, we can then generate our shachain producer
-	// and from that generate the per-commitment point.
-	return chainhash.NewHash(revocationRoot.Serialize())
-}
-
-func (b *BtcWallet) GetNodeKey() (*btcec.PrivateKey, error) {
-	key, err := b.derivePrivKey(keychain.KeyDescriptor{
-		KeyLocator: keychain.KeyLocator{
-			Family: keychain.KeyFamilyNodeKey,
-			Index:  0,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return key, nil
-}
-
-type PrivateKey struct {
-	privateKey *btcec.PrivateKey
-}
-
-func (b *PrivateKey) ECDH(pubKey *btcec.PublicKey) ([]byte, error) {
-	s := &btcec.PublicKey{}
-	x, y := btcec.S256().ScalarMult(pubKey.X, pubKey.Y, b.privateKey.D.Bytes())
-	s.X = x
-	s.Y = y
-
-	h := sha256.Sum256(s.SerializeCompressed())
-	return h[:], nil
-}
-
-func (b *PrivateKey) PubKey() *btcec.PublicKey {
-	return b.privateKey.PubKey()
 }

@@ -285,7 +285,10 @@ func lndMain() error {
 	registeredChains.RegisterChain(primaryChain, activeChainControl)
 
 	// TODO(roasbeef): add rotation
-	idPrivKey, err := activeChainControl.wallet.GetNodeKey()
+	idPrivKey, err := activeChainControl.wallet.DerivePrivKey(keychain.KeyLocator{
+			Family: keychain.KeyFamilyNodeKey,
+			Index:  0,
+	})
 	if err != nil {
 		return err
 	}

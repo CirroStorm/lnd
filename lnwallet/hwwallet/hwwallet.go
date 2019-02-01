@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/juju/errors"
 	"github.com/tyler-smith/go-bip32"
 	"os"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 	"github.com/btcsuite/btcwallet/waddrmgr"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcwallet/walletdb"
@@ -197,7 +197,7 @@ func (b *HwWallet) PublishTransaction(tx *wire.MsgTx) error {
 //
 // This is a part of the WalletController interface.
 func (b *HwWallet) ListTransactionDetails() ([]*lnwallet.TransactionDetail, error) {
-	// TODO call rcp
+	// TODO call RP
 	pc, _, _, _ := runtime.Caller(1)
 	panic(fmt.Sprintf("%s", runtime.FuncForPC(pc).Name()))
 	return nil, nil
@@ -333,29 +333,23 @@ func (b *HwWallet) DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescriptor
 	return result, nil
 }
 
-func (b *HwWallet) GetRevocationRoot(nextRevocationKeyDesc keychain.KeyDescriptor) (*chainhash.Hash, error) {
-	// TODO call rpc to get private key
-	//revocationRoot, err := b.DerivePrivKey(nextRevocationKeyDesc)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//// Once we have the root, we can then generate our shachain producer
-	//// and from that generate the per-commitment point.
-	//return chainhash.NewHash(revocationRoot.Serialize())
-	return nil, nil
-}
+func (b *HwWallet) DerivePrivKey(keyLoc keychain.KeyLocator) (*btcec.PrivateKey, error) {
+	// private keys for KeyFamilyMultiSig are stored on a separate device and so are not
+	// available directly
+	// but we can return private keys for other families
+	if keyLoc.Family == keychain.KeyFamilyMultiSig {
+		return nil, errors.New("Getting private keys for KeyFamilyMultiSig is not allowed")
+	}
 
-func (b *HwWallet) GetNodeKey() (*btcec.PrivateKey, error) {
 	var result *btcec.PrivateKey
 
 	err := walletdb.Update(b.db, func(tx walletdb.ReadWriteTx) error {
-		familyBucket, err := b.getFamilyBucket(keychain.KeyFamilyNodeKey, tx)
+		familyBucket, err := b.getFamilyBucket(keyLoc.Family, tx)
 		if err != nil {
 			return err
 		}
 
-		nodeKeyKey := []byte("nodeKey")
+		nodeKeyKey := []byte{byte(keyLoc.Family)}
 		nodeKeyBytes := familyBucket.Get(nodeKeyKey)
 		if nodeKeyBytes == nil {
 			privateKey, err := btcec.NewPrivateKey(btcec.S256())
@@ -375,10 +369,6 @@ func (b *HwWallet) GetNodeKey() (*btcec.PrivateKey, error) {
 	}
 
 	return result, nil
-}
-
-func (b *HwWallet) ECDH(key *btcec.PublicKey, key2 *PrivateKey) ([]byte, error) {
-	panic("implement me")
 }
 
 //{
@@ -489,20 +479,4 @@ func (b *HwWallet) getNextAddressIndex(family keychain.KeyFamily, change bool) (
 	}
 
 	return result, nil
-}
-
-type PrivateKey struct {
-	publicKey *btcec.PublicKey
-
-	// maintain a reference to our wallet so that we can call it when needed
-	// to perform operations with our private key
-	wallet *HwWallet
-}
-
-func (b *PrivateKey) ECDH(pubKey *btcec.PublicKey) ([]byte, error) {
-	return b.wallet.ECDH(pubKey, b)
-}
-
-func (b *PrivateKey) PubKey() *btcec.PublicKey {
-	return b.publicKey
 }

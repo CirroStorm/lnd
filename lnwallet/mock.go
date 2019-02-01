@@ -3,15 +3,15 @@ package lnwallet
 import (
 	"encoding/hex"
 	"fmt"
+	"sync/atomic"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/lightningnetwork/lnd/keychain"
-	"sync/atomic"
 )
 
 // MockWalletController is used by the LightningWallet, and let us mock the
@@ -142,12 +142,8 @@ func (*MockWalletController) Stop() error {
 	return nil
 }
 
-func (m *MockWalletController) GetRevocationRoot(nextRevocationKeyDesc keychain.KeyDescriptor) (*chainhash.Hash, error) {
-	return chainhash.NewHash(m.RootKey.Serialize())
-}
-
-func (b *MockWalletController) GetNodeKey() (*btcec.PrivateKey, error) {
-	return nil, nil
+func (m *MockWalletController) DerivePrivKey(keyLoc keychain.KeyLocator) (*btcec.PrivateKey, error) {
+	return m.RootKey, nil
 }
 
 func (m *MockWalletController) DeriveNextKey(keyFam keychain.KeyFamily) (keychain.KeyDescriptor, error) {
@@ -165,8 +161,4 @@ func (m *MockWalletController) DeriveKey(keyLoc keychain.KeyLocator) (keychain.K
 	return keychain.KeyDescriptor{
 		PubKey: pub,
 	}, nil
-}
-
-func (m *MockWalletController) DerivePrivKey(keyDesc keychain.KeyDescriptor) (*btcec.PrivateKey, error) {
-	return m.RootKey, nil
 }

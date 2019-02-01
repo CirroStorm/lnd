@@ -127,14 +127,6 @@ type TransactionSubscription interface {
 	Cancel()
 }
 
-// for security reasons we don't our private keys to actually contain
-// the private key secret
-// TODO improve this comment
-type PrivateKey interface {
-	PubKey() *btcec.PublicKey
-	ECDH(pubKey *btcec.PublicKey) ([]byte, error)
-}
-
 // WalletController defines an abstract interface for controlling a local Pure
 // Go wallet, a local or remote wallet via an RPC mechanism, or possibly even
 // a daemon assisted hardware wallet. This interface serves the purpose of
@@ -231,9 +223,7 @@ type WalletController interface {
 	// key.
 	DeriveKey(keyLoc keychain.KeyLocator) (keychain.KeyDescriptor, error)
 
-	GetRevocationRoot(nextRevocationKeyDesc keychain.KeyDescriptor) (*chainhash.Hash, error)
-
-	GetNodeKey() (*btcec.PrivateKey, error)
+	DerivePrivKey(keyLoc keychain.KeyLocator) (*btcec.PrivateKey, error)
 }
 
 // BlockChainIO is a dedicated source which will be used to obtain queries
