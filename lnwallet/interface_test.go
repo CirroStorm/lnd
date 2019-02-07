@@ -367,7 +367,7 @@ func createTestWallet(tempTestDir string, miningNode *rpctest.Harness,
 		Database:         cdb,
 		Notifier:         notifier,
 		WalletController: wc,
-		Signer:           wc.(lnwallet.Signer),
+		Signer:           wc.(input.Signer),
 		ChainIO:          bio,
 		FeeEstimator:     lnwallet.NewStaticFeeEstimator(2500, 0),
 		DefaultConstraints: channeldb.ChannelConstraints{

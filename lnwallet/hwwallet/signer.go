@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"runtime"
 )
@@ -28,7 +29,7 @@ func (b *HwWallet) FetchInputInfo(prevOut *wire.OutPoint) (*wire.TxOut, error) {
 //
 // This is a part of the WalletController interface.
 func (b *HwWallet) SignOutputRaw(tx *wire.MsgTx,
-	signDesc *lnwallet.SignDescriptor) ([]byte, error) {
+	signDesc *input.SignDescriptor) ([]byte, error) {
 	// TODO call rpc
 	pc, _, _, _ := runtime.Caller(1)
 	panic(fmt.Sprintf("%s", runtime.FuncForPC(pc).Name()))
@@ -43,7 +44,7 @@ func (b *HwWallet) SignOutputRaw(tx *wire.MsgTx,
 //
 // This is a part of the WalletController interface.
 func (b *HwWallet) ComputeInputScript(tx *wire.MsgTx,
-	signDesc *lnwallet.SignDescriptor) (*lnwallet.InputScript, error) {
+	signDesc *input.SignDescriptor) (*input.Script, error) {
 
 	sd := SignDescriptor{
 		KeyDesc: &KeyDescriptor{
@@ -78,14 +79,14 @@ func (b *HwWallet) ComputeInputScript(tx *wire.MsgTx,
 
 	// fortunetly the response struct is simple enough that we can just cast it
 	is := *resp.GetInputScript()
-	result := lnwallet.InputScript{Witness: is.Witness, SigScript: is.ScriptSig}
+	result := input.Script{Witness: is.Witness, SigScript: is.ScriptSig}
 
 	return &result, nil
 }
 
 // A compile time check to ensure that BtcWallet implements the Signer
 // interface.
-var _ lnwallet.Signer = (*HwWallet)(nil)
+var _ input.Signer = (*HwWallet)(nil)
 
 // SignMessage attempts to sign a target message with the private key that
 // corresponds to the passed public key. If the target private key is unable to

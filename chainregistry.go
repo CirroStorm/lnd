@@ -27,7 +27,6 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/htlcswitch"
 	"github.com/lightningnetwork/lnd/input"
-	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/btcwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/hwwallet"
@@ -523,7 +522,7 @@ func newChainControlFromConfig(cfg *config, chanDB *channeldb.DB,
 	}
 
 	cc.msgSigner = wc.(lnwallet.MessageSigner)
-	cc.signer = wc.(lnwallet.Signer)
+	cc.signer = wc.(input.Signer)
 
 	// Select the default channel constraints for the primary chain.
 	channelConstraints := defaultBtcChannelConstraints
